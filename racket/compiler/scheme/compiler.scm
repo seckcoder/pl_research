@@ -23,10 +23,13 @@
       (emit "~s:" n)
       (let* ([v*-num (length v*)]
              [env (env:init v*
-                            (range wordsize
-                                   wordsize
-                                   (* v*-num wordsize)))])
-        ((emit-exp (- wordsize) env) body)
+                            (range (- wordsize)
+                                   (- wordsize)
+                                   (- (* v*-num wordsize))))])
+        ((emit-exp (- (- (* v*-num wordsize))
+                      wordsize)
+                   env
+                   #t) body)
         (emit "   ret")
         )]))
 
@@ -59,7 +62,7 @@
   ; 32bit processors have 8-byte boundaries. So we don't
   ; need to aligh the heap address when start.
   ;(emit-align-heap) ; aligh the start address of heap
-  ((emit-exp (- wordsize) (env:empty)) x)
+  ((emit-exp (- wordsize) (env:empty) #t) x)
   (emit-restore-regs)
   (emit "   ret")
   (emit-global-proc*)
@@ -105,11 +108,26 @@
   (emit "   .globl ~a" lbl)
   (emit "   .type ~a, @function" lbl)
   (emit "~a:" lbl))
+(define-syntax gen-pairs
+  (syntax-rules ()
+    [(_)
+     (list)]
+    [(_ (op0 p* ...) pair* ...)
+     (cons
+       (cons `op0
+             (lambda ()
+               p* ...))
+       (gen-pairs pair* ...))]))
+(define-syntax biop-emit-pairs
+  (syntax-rules ()
+    [(_ p0 p* ...)
+     (make-hasheq
+       (gen-pairs p0 p* ...))]))
 
 (define emit-exp
-  (lambda (si env)
+  (lambda (si env tail?)
     (define (emit-unop op v)
-      (emit-exp1 v)
+      ((emit-exp si env #f) v)
       (match op
         ['add1 (emit "   addl $~s, %eax" (immediate-rep 1))]
         ['$fxadd1 (emit-exp1 `(add1 ,v))]
@@ -162,6 +180,14 @@
          (emit "   cmpb $~s, %al" pairtag)
          (emit "   sete %al")
          (emit-eax-0/1->bool)]
+        ['print
+         (emit "   addl $~s, %esp" (- si wordsize))
+         (emit "   movl %ebp, ~s(%esp)" wordsize) ; preserve %ebp on stack
+         (emit "   movl %eax, (%esp)") ; move eax value to stack
+         (emit "   call print_ptr")
+         (emit "   movl ~s(%esp), %ebp" wordsize) ; restore %ebp
+         (emit "   subl $~s, %esp" (- si wordsize))
+         (emit "   movl $~s, %eax" (immediate-rep 0))]
         [_ (error 'emit-unop "~a is not an unary operator" op)]))
     (define (emit-biop op a b)
       (define (emit-*)
@@ -173,24 +199,10 @@
         (emit "  imull ~s(%esp), %eax" si) ; multiply two number
         (emit-add-fxtag 'eax))
       (define (emit-biv)
-        (emit-exp1 a)
+        (emit-exps-leave-last si env (list a b)))
+        #|((emit-exp si env #f) a)
         (emit "   movl %eax, ~s(%esp)" si); store a to stack
-        ((emit-exp (- si wordsize) env) b))
-      (define-syntax gen-pairs
-        (syntax-rules ()
-          [(_)
-           (list)]
-          [(_ (op0 p* ...) pair* ...)
-           (cons
-             (cons `op0
-                   (lambda ()
-                     p* ...))
-             (gen-pairs pair* ...))]))
-      (define-syntax biop-emit-pairs
-        (syntax-rules ()
-          [(_ p0 p* ...)
-           (make-hasheq
-             (gen-pairs p0 p* ...))]))
+        ((emit-exp (- si wordsize) env #f) b))|#
       (define (emit-cmp op)
         (emit-biv)
         ;(printf "emit-cmp:~s\n" op)
@@ -264,7 +276,7 @@
         (emit "   call ~a" rator)
         (emit "   subl $~s, %esp" (+ wordsize new-si))))
     (define (emit-make-vec n)
-      (emit-exp1 n)
+      ((emit-exp si env #f) n)
       (emit-remove-fxtag 'eax) ; %eax store length
       (emit "   movl %eax, (%ebp)") ; move length to heap
       (emit "   movl %eax, %ebx") ; store length in %ebx
@@ -321,7 +333,8 @@
     (define (emit-closure f rv)
       (emit "# emit-closure")
       ;(print rv)(newline)
-      (emit-exp1 rv)
+      ;(emit-exp1 rv)
+      ((emit-exp si env #f) rv)
       (emit "   leal ~s, %ecx" f)
       (emit "   movl %ecx, (%ebp)") ; move label address to heap
       (emit "   movl %eax, ~s(%ebp)" wordsize) ; move vector env to heap
@@ -332,9 +345,20 @@
       ) ; step ebp
     (define (emit-app rator rands)
       (emit "# emit-app")
-      (emit-exp1 rator)
-      (emit-remove-cljtag 'eax)
-      (emit "   movl (%eax), %ecx # store label to stack")
+      (let ([new-si
+              (emit-exps-push-all (- si (* 2 wordsize))
+                                  env
+                                  rands)])
+        ((emit-exp new-si env #f) rator) ; get closure
+        (emit-remove-cljtag 'eax)
+        (emit "   movl (%eax), %ecx") ; move label to ecx
+        (emit "   movl ~s(%eax), %edx" wordsize) ; movel clojure env to stack
+        (emit "   movl %edx, ~s(%esp)" (- si wordsize))
+
+        (emit "   addl $~s, %esp" (+ si wordsize))
+        (emit "   call *%ecx")
+        (emit "   subl $~s, %esp" (+ si wordsize)))
+      #|(emit "   movl (%eax), %ecx # store label to stack")
       (emit "   movl %ecx, ~s(%esp)" si)
       (emit "   movl ~s(%eax), %ecx # move env as first args" wordsize)
       (emit "   movl %ecx, ~s(%esp)" (- si wordsize))
@@ -343,15 +367,20 @@
               (emit-exps-push-all (- si (* 2 wordsize))  ; step two(label, first arg)
                                   env
                                   rands)]) ; push all rands to stack
-        (emit-swap-rands-range (- si wordsize)
-                               new-si)
+        (if tail?
+          ; tail call
+          (emit-move-args-to-base (- si wordsize)
+                                  new-si)
+          (emit-swap-rands-range (- si wordsize)
+                                 new-si))
         (emit "   movl ~s(%esp), %ecx" si)
-        (emit "   addl $~s, %esp" (+ wordsize new-si))
+        ;(emit "   addl $~s, %esp" (+ wordsize new-si))
         (emit "   call *%ecx")
-        (emit "   subl $~s, %esp" (+ wordsize new-si))
-        )
+        ;(emit "   subl $~s, %esp" (+ wordsize new-si))
+        )|#
       (emit "# emit-app end")
       )
+    ; ## emit-exp1 ##
     (define emit-exp1
       (lambda (exp)
         (match exp
@@ -365,21 +394,17 @@
           [`(make-vec ,n)
             (emit-make-vec n)]
           [`(vec-ref ,v ,i)
-            (emit-vec-ref v i)
-            ]
+            (emit-vec-ref v i)]
           [`(vec-set! ,v ,i ,val)
             (emit-vec-set! v i val)]
           [`(vec ,v* ...)
             (emit-vec-from-values v*)]
-          [`(print ,v)
-            (emit-exp1 v)
-            (emit-print si)]
           [(list (? unop? op) v)
            (emit-unop op v)]
           [(list (? biop? op) a b)
            (emit-biop op a b)]
           [`(if ,test ,then ,else)
-            (emit-exp1 test)
+            ((emit-exp si env #f) test)
             (let ((else-lbl (gen-label))
                   (endif-lbl (gen-label)))
               ; jump to else if equal to false
@@ -392,17 +417,22 @@
               (emit-exp1 else)
               (emit "~s:" endif-lbl))]
           [`(let ((,v* ,e*) ...) ,body)
-            (match (emit-decls si env v* e*)
+            (match (emit-decls si env #f v* e*)
               [(list si env)
-               ((emit-exp si env)
+               ((emit-exp si env tail?)
                 body)])]
           [`(lambda (,v* ...) ,body)
             (error 'emit-exp "lambda should be converted to procedure")]
           [`(begin ,exp* ...)
-            (for-each
-              (lambda (exp)
-                (emit-exp1 exp))
-              exp*)]
+            (let loop ([exps exps])
+              (cond
+                [(null? exps)
+                 (error 'begin "empty body")]
+                [(null? (cdr exps))
+                 (emit-exp1 (car exps))]
+                [else
+                  ((emit-exp si env #f) (car exps))
+                  (loop (cdr exps))]))]
           [`(labels ([,f* ,proc*] ...) ,exp)
             (for-each
               (lambda (f proc)
@@ -428,7 +458,7 @@
         (env:ext env v si)))
 
 ; for let
-(define (emit-decls si env vs es)
+(define (emit-decls si env tail? vs es)
   (let loop [(si si)
              (cur-vs vs)
              (cur-es es)
@@ -442,7 +472,7 @@
            (null? cur-es))
        (error 'emit-decls "vs and es have different length")]
       [else
-        ((emit-exp si env) (car cur-es))
+        ((emit-exp si env tail?) (car cur-es))
         (emit "   movl %eax, ~s(%esp)" si)
         (loop (- si wordsize)
               (cdr cur-vs)
@@ -499,7 +529,7 @@
     [(null? exps)
      (error 'emit-exps-leav-last "need at least one exp")]
     [(null? (cdr exps))
-     ((emit-exp si env) (car exps))
+     ((emit-exp si env #f) (car exps))
      si]
     [else
       (let-values ([(first rest)
@@ -512,7 +542,7 @@
   (foldl
     (match-lambda*
       [(list exp si)
-       ((emit-exp si env) exp)
+       ((emit-exp si env #f) exp)
        (emit-eax->stack si)
        (- si wordsize)])
     si
@@ -557,17 +587,6 @@
   (emit "   movl ~s(%esp), %ecx" stack-pos)
   (emit "   movl %ecx, ~s(%ebp)" heap-pos))
 
-; print register value, for debugging purpose
-(define (emit-print si)
-  (emit "   addl $~s, %esp" (- si wordsize))
-  (emit "   movl %ebp, ~s(%esp)" wordsize) ; preserve %ebp on stack
-  (emit "   movl %eax, (%esp)") ; move eax value to stack
-  (emit "   call print_ptr")
-  (emit "   movl ~s(%esp), %ebp" wordsize) ; restore %ebp
-  (emit "   subl $~s, %esp" (- si wordsize))
-  (emit "   movl $~s, %eax" (immediate-rep 0))
-  )
-
 #|(load "tests-1.3-req1.scm")
 (load "tests-1.4-req.scm")
 (load "tests-1.5-req1.scm")
@@ -578,5 +597,5 @@
 ; (load "tests-1.8-opt.scm")
 ; (load "tests-sexp.scm")
 ;(load "tests-print.scm")
-;(load "tests-proc.scm")
+(load "tests-proc.scm")
 ;(load "tests-vector.scm")
