@@ -6,6 +6,7 @@ It contains:
   * call-by-name/call-by-value/call-by-need
   * type check and type inference(HM style)
   * thread simulation based on interpreters
+  * erlang's actor model simulation based on interpreters
   * cps style interpreter and cps transformation for lambda expression
 - compiler
   * a scheme compiler that compiles to x86
