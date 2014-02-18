@@ -10,6 +10,7 @@ It contains or will contain:
   * cps style interpreter and cps transformation for lambda expression
   * exception
   * fast interpreter based pre static analysis
+  * a minikanren interpreter
 - compiler
   * a scheme compiler that compiles to x86
     - basic data type: fixnumber, char, bool, string, vector
@@ -26,3 +27,7 @@ elegant-weapons in `./lib` is by [eholk](https://github.com/eholk/elegant-weapon
 
 copyright (c) 2011-2013 the trustees of indiana university and indiana
 university research and technology corporation.  all rights reserved.
+
+minikanren
+----------
+The minikanren interpreter is based on the code of [The Reasoned Schemer](http://mitpress.mit.edu/books/reasoned-schemer)
