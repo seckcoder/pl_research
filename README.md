@@ -1,5 +1,15 @@
 Experiments for programming language.
 
+It contains:
+
+- interpreters
+  * call-by-name/call-by-value/call-by-need
+  * type check and type inference(HM style)
+  * thread simulation based on interpreters
+  * cps style interpreter and cps transformation for lambda expression
+- compiler
+  * a scheme compiler that compiles to x86
+
 elegant-weapons
 ---------
 elegant-weapons in `./lib` is by [eholk](https://github.com/eholk/elegant-weapons)
