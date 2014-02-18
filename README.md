@@ -16,6 +16,7 @@ It contains or will contain:
     - basic data type: fixnumber, char, bool, string, vector
     - closure support
     - optimization based on cps transformation
+    - tail call optimization
   * a scheme compiler compiles to C
 - fp and others
   * monad experiments

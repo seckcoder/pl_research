@@ -8,7 +8,7 @@
     [`(let* () ,body ...)
       (parse `(let () ,@body))]
     [`(let* ([,v0 ,e0]) ,body ...)
-      (parse `(let ([,v0 ,e0]) ,@body))]
+      (parse `(let ([,v0 ,(parse e0)]) ,@body))]
     [`(let* ([,v0 ,e0]
              ,bind* ...) ,body ...)
       `(let ([,v0 ,e0])
@@ -36,7 +36,7 @@
          ,(parse then)
          ,(parse else))]
     [`(let ([,v* ,e*] ...) ,body* ...)
-      `(let ,(map list v* e*)
+      `(let ,(map list v* (map parse e*))
          ,(if (null? (cdr body*))
             (parse (car body*))
             (parse `(begin ,@body*))))]

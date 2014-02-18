@@ -50,21 +50,28 @@
 (define (emit-program x)
   (init-global!)
   (emit "   .text")
+  ; We need L_scheme_entry since we need to make sure that when starting
+  ; to emit-exp, the value above %esp is a return address. Otherwise,
+  ; the tail-optimization will not work.
+  (emit-fn-header 'L_scheme_entry)
+  ((emit-exp (- wordsize) (env:empty) #t) x)
+  (emit "   ret # ret from L_scheme_entry") ; if program is tail-optimized, ret will be ignored
+  ;(emit "   ret")
   (emit-fn-header 'scheme_entry)
   (emit-preserve-regs)
-  (emit "   movl %esp, %ecx") ; store esp temporarily
+  (emit "   movl %esp, %ecx # store esp temporarily")
   ; heap : low->high
   ; stack : high->low
-  (emit "   movl 12(%ecx), %ebp") ; set heap pointer
-  (emit "   movl 8(%ecx), %esp") ; set stack pointer
-  (emit "   pushl 4(%ecx)") ; store ctx
+  (emit "   movl 12(%ecx), %ebp # set heap pointer")
+  (emit "   movl 8(%ecx), %esp # set stack pointer")
+  (emit "   pushl 4(%ecx) # store ctx")
   ; It's an assumption that physical addresses on Intel's
   ; 32bit processors have 8-byte boundaries. So we don't
   ; need to aligh the heap address when start.
   ;(emit-align-heap) ; aligh the start address of heap
-  ((emit-exp (- wordsize) (env:empty) #t) x)
+  (emit "   call L_scheme_entry")
   (emit-restore-regs)
-  (emit "   ret")
+  (emit "   ret # return from scheme_entry")
   (emit-global-proc*)
   )
 (define (emit-preserve-regs)
@@ -200,255 +207,256 @@
         (emit-add-fxtag 'eax))
       (define (emit-biv)
         (emit-exps-leave-last si env (list a b)))
-        #|((emit-exp si env #f) a)
-        (emit "   movl %eax, ~s(%esp)" si); store a to stack
-        ((emit-exp (- si wordsize) env #f) b))|#
-      (define (emit-cmp op)
-        (emit-biv)
-        ;(printf "emit-cmp:~s\n" op)
-        (emit "  cmpl ~s(%esp), %eax" si)
-        (case op
-          ['= (emit "   sete %al")]
-          ['< (emit "   setg %al")]
-          ['<= (emit "  setge %al")]
-          ['> (emit "   setl %al")]
-          ['>= (emit "  setle %al")]
-          [else (report-not-found)])
-        ;(printf "end of emit-cmp\n")
-        (emit-eax-0/1->bool))
-      (define op->emitter
-        (biop-emit-pairs
-          [* (emit-*)]
-          [fx* (emit-exp1 `(* ,a ,b))]
-          [+ (emit-biv)
-             ; b = a + b
-             (emit "   addl ~s(%esp), %eax" si)]
-          [fx+ (emit-exp1 `(+ ,a ,b))]
-          [- (emit-biv) 
-             ; b = a - b
-             (emit "   movl %eax, %ecx")
-             (emit "   movl ~s(%esp), %eax" si)
-             (emit "   subl %ecx, %eax")]
-          [fx- (emit-exp1 `(- ,a ,b))]
-          [= (emit-cmp '=)]
-          [fx= (emit-exp1 `(= ,a ,b))]
-          [< (emit-cmp '<)]
-          [fx< (emit-exp1 `(< ,a ,b))]
-          [<= (emit-cmp '<=)]
-          [fx<= (emit-exp1 `(<= ,a ,b))]
-          [> (emit-cmp '>)]
-          [fx> (emit-exp1 `(> ,a ,b))]
-          [>= (emit-cmp '>=)]
-          [fx>= (emit-exp1 `(>= ,a ,b))]
-          [cons (emit-biv)
-                (emit "   movl %eax, ~s(%ebp)" wordsize) ; copy b to heap
-                (emit "   movl ~s(%esp), %ecx" si) ; copy a to temporary
-                (emit "   movl %ecx, (%ebp)") ; copy a to heap
-                (emit "   movl %ebp, %eax")
-                (emit "   orl $~s, %eax" pairtag)
-                ; assert 2*wordsize = n * heap-align
-                (emit "   addl $~s, %ebp" (* 2 wordsize))
-                ; baseptr + 2 * wordsize is 8-byte aligned.
-                ]
-          ))
-      (define (report-not-found)
-        (error 'emit-biop "~a is not a binary operator" op))
-      ;(printf "emit-op ~a ~a\n" op (hash-ref op->emitter op))
-      ((hash-ref op->emitter op report-not-found)))
-    (define (emit-rands rands)
-      (let ([new-si (emit-exps-push-all si env rands)])
-        ; swap the rands order
-        ; rand-0 : si(%esp)
-        ; rand-n : (+ new-si wordsize)(%esp)
-        ;(printf "~a ~a ~a\n" si new-si (length rands))
-        (unless (= (+ new-si
-                      (* (length rands) wordsize))
-                   si)
-          ; for debuggin purpose
-          (error 'emit-rands "some error happened"))
-        (emit-swap-rands-range si new-si)
-        new-si))
-    (define (emit-call-proc rator rands)
-      (let ([new-si (emit-rands rands)])
-        ;(printf "~a ~a\n" si new-si)
-        ; it's (+ wordsize new-si)!!!
-        (emit "   addl $~s, %esp" (+ wordsize new-si))
-        (emit "   call ~a" rator)
-        (emit "   subl $~s, %esp" (+ wordsize new-si))))
-    (define (emit-make-vec n)
-      ((emit-exp si env #f) n)
-      (emit-remove-fxtag 'eax) ; %eax store length
-      (emit "   movl %eax, (%ebp)") ; move length to heap
-      (emit "   movl %eax, %ebx") ; store length in %ebx
-      (emit "   movl %ebp, %eax") ; return as pointer
+      #|((emit-exp si env #f) a)
+      (emit "   movl %eax, ~s(%esp)" si); store a to stack
+      ((emit-exp (- si wordsize) env #f) b))|#
+    (define (emit-cmp op)
+      (emit-biv)
+      ;(printf "emit-cmp:~s\n" op)
+      (emit "  cmpl ~s(%esp), %eax" si)
+      (case op
+        ['= (emit "   sete %al")]
+        ['< (emit "   setg %al")]
+        ['<= (emit "  setge %al")]
+        ['> (emit "   setl %al")]
+        ['>= (emit "  setle %al")]
+        [else (report-not-found)])
+      ;(printf "end of emit-cmp\n")
+      (emit-eax-0/1->bool))
+    (define op->emitter
+      (biop-emit-pairs
+        [* (emit-*)]
+        [fx* (emit-exp1 `(* ,a ,b))]
+        [+ (emit-biv)
+           ; b = a + b
+           (emit "   addl ~s(%esp), %eax" si)]
+        [fx+ (emit-exp1 `(+ ,a ,b))]
+        [- (emit-biv) 
+           ; b = a - b
+           (emit "   movl %eax, %ecx")
+           (emit "   movl ~s(%esp), %eax" si)
+           (emit "   subl %ecx, %eax")]
+        [fx- (emit-exp1 `(- ,a ,b))]
+        [= (emit-cmp '=)]
+        [fx= (emit-exp1 `(= ,a ,b))]
+        [< (emit-cmp '<)]
+        [fx< (emit-exp1 `(< ,a ,b))]
+        [<= (emit-cmp '<=)]
+        [fx<= (emit-exp1 `(<= ,a ,b))]
+        [> (emit-cmp '>)]
+        [fx> (emit-exp1 `(> ,a ,b))]
+        [>= (emit-cmp '>=)]
+        [fx>= (emit-exp1 `(>= ,a ,b))]
+        [cons (emit-biv)
+              (emit "   movl %eax, ~s(%ebp)" wordsize) ; copy b to heap
+              (emit "   movl ~s(%esp), %ecx" si) ; copy a to temporary
+              (emit "   movl %ecx, (%ebp)") ; copy a to heap
+              (emit "   movl %ebp, %eax")
+              (emit "   orl $~s, %eax" pairtag)
+              ; assert 2*wordsize = n * heap-align
+              (emit "   addl $~s, %ebp" (* 2 wordsize))
+              ; baseptr + 2 * wordsize is 8-byte aligned.
+              ]
+        ))
+    (define (report-not-found)
+      (error 'emit-biop "~a is not a binary operator" op))
+    ;(printf "emit-op ~a ~a\n" op (hash-ref op->emitter op))
+    ((hash-ref op->emitter op report-not-found)))
+  (define (emit-rands rands)
+    (let ([new-si (emit-exps-push-all si env rands)])
+      ; swap the rands order
+      ; rand-0 : si(%esp)
+      ; rand-n : (+ new-si wordsize)(%esp)
+      ;(printf "~a ~a ~a\n" si new-si (length rands))
+      (unless (= (+ new-si
+                    (* (length rands) wordsize))
+                 si)
+        ; for debuggin purpose
+        (error 'emit-rands "some error happened"))
+      (emit-swap-rands-range si new-si)
+      new-si))
+  (define (emit-call-proc rator rands)
+    (let ([new-si (emit-rands rands)])
+      ;(printf "~a ~a\n" si new-si)
+      ; it's (+ wordsize new-si)!!!
+      (emit "   addl $~s, %esp" (+ wordsize new-si))
+      (emit "   call ~a" rator)
+      (emit "   subl $~s, %esp" (+ wordsize new-si))))
+  (define (emit-make-vec n)
+    ((emit-exp si env #f) n)
+    (emit-remove-fxtag 'eax) ; %eax store length
+    (emit "   movl %eax, (%ebp)") ; move length to heap
+    (emit "   movl %eax, %ebx") ; store length in %ebx
+    (emit "   movl %ebp, %eax") ; return as pointer
+    (emit-add-vectag 'eax)
+    (emit "   addl $1, %ebx") ; we store (len+1) value
+    (emit "   imull $~s, %ebx" wordsize) ; calculate address of ebp
+    (emit "   addl %ebx, %ebp")
+    (emit "   addl $~s, %ebp" (sub1 heap-align)) ; align heap address
+    (emit "   andl $~s, %ebx" (- heap-align)))
+  (define (emit-vec-ref v i)
+    ; TODO: out-of-bounds check?
+    (emit-exps-leave-last si env (list v i))
+    ; remove i's flag
+    (emit-remove-fxtag 'eax)
+    (emit "   movl ~s(%esp), %ecx" si) ; v
+    ; %ecx + %eax*wordsize + wordsize. extra wordsize is for vector length
+    (emit-remove-vectag 'ecx)
+    (emit "   movl ~s(%ecx, %eax, ~s), %eax" wordsize wordsize)
+    )
+  (define (emit-vec-set! v i val)
+    (emit-exps-leave-last si env (list v i val))
+    (emit "   movl ~s(%esp), %ecx" si) ; v
+    (emit-remove-vectag 'ecx)
+    (emit "   movl ~s(%esp), %edx" (- si wordsize)) ; i
+    ; i should be fxnum, we should remove its flags
+    (emit-remove-fxtag 'edx)
+    ; %ecx + %edx*wordsize + wordsize. extra wordsize is for vector length
+    (emit "   movl %eax, ~s(%ecx, %edx, ~s)" wordsize wordsize)
+    )
+  (define (emit-vec-from-values vs)
+    ; why we shouldn't evaluate one value and move it to heap?
+    ; Since when evaluate the value, it may change ebp
+    (emit "# emit-vec-from-values")
+    (emit-exps-push-all si env vs)
+    (let ([len (length vs)])
+      (emit "   movl $~s, (%ebp) # move length to vector" len)
+      (let loop ([i 0])
+        (unless (>= i len)
+          ; move the ith item from stack to heap
+          (emit-stack->heap (- si (* i wordsize))
+                            (* (add1 i) wordsize))
+          (loop (add1 i))))
+      (emit "   movl %ebp, %eax") ; return pointer
       (emit-add-vectag 'eax)
-      (emit "   addl $1, %ebx") ; we store (len+1) value
-      (emit "   imull $~s, %ebx" wordsize) ; calculate address of ebp
-      (emit "   addl %ebx, %ebp")
-      (emit "   addl $~s, %ebp" (sub1 heap-align)) ; align heap address
-      (emit "   andl $~s, %ebx" (- heap-align)))
-    (define (emit-vec-ref v i)
-      ; TODO: out-of-bounds check?
-      (emit-exps-leave-last si env (list v i))
-      ; remove i's flag
-      (emit-remove-fxtag 'eax)
-      (emit "   movl ~s(%esp), %ecx" si) ; v
-      ; %ecx + %eax*wordsize + wordsize. extra wordsize is for vector length
-      (emit-remove-vectag 'ecx)
-      (emit "   movl ~s(%ecx, %eax, ~s), %eax" wordsize wordsize)
+      ; adjust heap pointer
+      (emit "   addl $~s, %ebp"
+            (+ (* (add1 len) wordsize)
+               (sub1 heap-align))) ; align heap
+      (emit "   andl $~s, %ebp" (- heap-align))
       )
-    (define (emit-vec-set! v i val)
-      (emit-exps-leave-last si env (list v i val))
-      (emit "   movl ~s(%esp), %ecx" si) ; v
-      (emit-remove-vectag 'ecx)
-      (emit "   movl ~s(%esp), %edx" (- si wordsize)) ; i
-      ; i should be fxnum, we should remove its flags
-      (emit-remove-fxtag 'edx)
-      ; %ecx + %edx*wordsize + wordsize. extra wordsize is for vector length
-      (emit "   movl %eax, ~s(%ecx, %edx, ~s)" wordsize wordsize)
-      )
-    (define (emit-vec-from-values vs)
-      ; why we shouldn't evaluate one value and move it to heap?
-      ; Since when evaluate the value, it may change ebp
-      (emit "# emit-vec-from-values")
-      (emit-exps-push-all si env vs)
-      (let ([len (length vs)])
-        (emit "   movl $~s, (%ebp) # move length to vector" len)
-        (let loop ([i 0])
-          (unless (>= i len)
-            ; move the ith item from stack to heap
-            (emit-stack->heap (- si (* i wordsize))
-                              (* (add1 i) wordsize))
-            (loop (add1 i))))
-        (emit "   movl %ebp, %eax") ; return pointer
-        (emit-add-vectag 'eax)
-        ; adjust heap pointer
-        (emit "   addl $~s, %ebp"
-              (+ (* (add1 len) wordsize)
-                 (sub1 heap-align))) ; align heap
-        (emit "   andl $~s, %ebp" (- heap-align))
-        )
-      (emit "# emit-vec-from-values end")
-      )
-    (define (emit-closure f rv)
-      (emit "# emit-closure")
-      ;(print rv)(newline)
-      ;(emit-exp1 rv)
-      ((emit-exp si env #f) rv)
-      (emit "   leal ~s, %ecx" f)
-      (emit "   movl %ecx, (%ebp)") ; move label address to heap
-      (emit "   movl %eax, ~s(%ebp)" wordsize) ; move vector env to heap
-      (emit "   movl %ebp, %eax") ; return as pointer
-      (emit-add-cljtag 'eax)
-      (emit "   addl $~s, %ebp" (* 2 wordsize))
-      (emit "# emit-closure end")
-      ) ; step ebp
-    (define (emit-app rator rands)
-      (emit "# emit-app")
+    (emit "# emit-vec-from-values end")
+    )
+  (define (emit-closure f rv)
+    (emit "# emit-closure")
+    ;(print rv)(newline)
+    ;(emit-exp1 rv)
+    ((emit-exp si env #f) rv)
+    (emit "   leal ~s, %ecx" f)
+    (emit "   movl %ecx, (%ebp)") ; move label address to heap
+    (emit "   movl %eax, ~s(%ebp)" wordsize) ; move vector env to heap
+    (emit "   movl %ebp, %eax") ; return as pointer
+    (emit-add-cljtag 'eax)
+    (emit "   addl $~s, %ebp" (* 2 wordsize))
+    (emit "# emit-closure end")
+    ) ; step ebp
+  (define (emit-app rator rands)
+    (emit "# emit-app")
+    ;(printf "emit-app: is tail call? ~a" tail?)
+    (if tail?
+      (begin
+      (emit "# tail-optimization")
       (let ([new-si
-              (emit-exps-push-all (- si (* 2 wordsize))
+              (emit-exps-push-all (- si wordsize)
                                   env
                                   rands)])
-        ((emit-exp new-si env #f) rator) ; get closure
+        ((emit-exp new-si env #f) rator)
         (emit-remove-cljtag 'eax)
-        (emit "   movl (%eax), %ecx") ; move label to ecx
-        (emit "   movl ~s(%eax), %edx" wordsize) ; movel clojure env to stack
-        (emit "   movl %edx, ~s(%esp)" (- si wordsize))
-
-        (emit "   addl $~s, %esp" (+ si wordsize))
-        (emit "   call *%ecx")
-        (emit "   subl $~s, %esp" (+ si wordsize)))
-      #|(emit "   movl (%eax), %ecx # store label to stack")
-      (emit "   movl %ecx, ~s(%esp)" si)
-      (emit "   movl ~s(%eax), %ecx # move env as first args" wordsize)
-      (emit "   movl %ecx, ~s(%esp)" (- si wordsize))
-      ; push all args to stack
-      (let ([new-si
-              (emit-exps-push-all (- si (* 2 wordsize))  ; step two(label, first arg)
-                                  env
-                                  rands)]) ; push all rands to stack
-        (if tail?
-          ; tail call
-          (emit-move-args-to-base (- si wordsize)
-                                  new-si)
-          (emit-swap-rands-range (- si wordsize)
-                                 new-si))
-        (emit "   movl ~s(%esp), %ecx" si)
-        ;(emit "   addl $~s, %esp" (+ wordsize new-si))
-        (emit "   call *%ecx")
-        ;(emit "   subl $~s, %esp" (+ wordsize new-si))
-        )|#
-      (emit "# emit-app end")
-      )
-    ; ## emit-exp1 ##
-    (define emit-exp1
-      (lambda (exp)
-        (match exp
-          [(? immediate? x)
-           (emit "   movl $~s, %eax" (immediate-rep x))]
-          [(? symbol? v)
-           ; variable
-           (let ([pos (env:app env v)])
-             ;(printf "emit-var: ~a  ~a\n" v pos)
-             (emit "   movl ~s(%esp), %eax" pos))]
-          [`(make-vec ,n)
-            (emit-make-vec n)]
-          [`(vec-ref ,v ,i)
-            (emit-vec-ref v i)]
-          [`(vec-set! ,v ,i ,val)
-            (emit-vec-set! v i val)]
-          [`(vec ,v* ...)
-            (emit-vec-from-values v*)]
-          [(list (? unop? op) v)
-           (emit-unop op v)]
-          [(list (? biop? op) a b)
-           (emit-biop op a b)]
-          [`(if ,test ,then ,else)
-            ((emit-exp si env #f) test)
-            (let ((else-lbl (gen-label))
-                  (endif-lbl (gen-label)))
-              ; jump to else if equal to false
-              ; Que: how to optimize this?
-              (emit "   cmpl $~s, %eax" bool-f)
-              (emit "   je ~a" else-lbl)
-              (emit-exp1 then)
-              (emit "   jmp ~s" endif-lbl)
-              (emit "~s:" else-lbl)
-              (emit-exp1 else)
-              (emit "~s:" endif-lbl))]
-          [`(let ((,v* ,e*) ...) ,body)
-            (match (emit-decls si env #f v* e*)
-              [(list si env)
-               ((emit-exp si env tail?)
-                body)])]
-          [`(lambda (,v* ...) ,body)
-            (error 'emit-exp "lambda should be converted to procedure")]
-          [`(begin ,exp* ...)
-            (let loop ([exps exps])
-              (cond
-                [(null? exps)
-                 (error 'begin "empty body")]
-                [(null? (cdr exps))
-                 (emit-exp1 (car exps))]
-                [else
-                  ((emit-exp si env #f) (car exps))
-                  (loop (cdr exps))]))]
-          [`(labels ([,f* ,proc*] ...) ,exp)
-            (for-each
-              (lambda (f proc)
-                (add-global-proc! f proc))
-              f*
-              proc*)
-            (emit-exp1 exp)]
-          [`(app-proc ,rator ,rand* ...)
-            (emit-call-proc rator rand*)]
-          [`(closure ,f ,rv)
-            (emit-closure f rv)]
-          [`(app ,rator ,rand* ...)
-            (emit-app rator rand*)]
-          [_ (error 'emit-exp "~a not matched" exp)]
-          )))
-    emit-exp1))
+        (emit "   movl (%eax), %ecx # move label to stack")
+        (emit "   movl %ecx, ~s(%esp)" new-si)
+        (emit "   movl ~s(%eax), %edx # move clojure env to stack" wordsize)
+        (emit "   movl %edx, ~s(%esp)" si)
+        (emit-stack-move-range
+          si
+          (- wordsize)
+          (+ new-si wordsize)
+          (- wordsize))
+        (emit "   jmp *~s(%esp) # tail jump" new-si)
+        ))
+      (begin
+        (emit "#no tail optmization")
+        (let ([new-si
+                (emit-exps-push-all (- si (* 2 wordsize))
+                                    env
+                                    rands)])
+          ((emit-exp new-si env #f) rator) ; get closure
+          (emit-remove-cljtag 'eax)
+          (emit "   movl (%eax), %ecx") ; move label to ecx
+          (emit "   movl ~s(%eax), %edx" wordsize) ; movel clojure env to stack
+          (emit "   movl %edx, ~s(%esp)" (- si wordsize))
+          (emit "   addl $~s, %esp" (+ si wordsize))
+          (emit "   call *%ecx")
+          (emit "   subl $~s, %esp" (+ si wordsize)))))
+    (emit "# emit-app end"))
+  ; ## emit-exp1 ##
+  (define emit-exp1
+    (lambda (exp)
+      (match exp
+        [(? immediate? x)
+         (emit "   movl $~s, %eax # emit immediate:~a" (immediate-rep x) x)]
+        [(? symbol? v)
+         ; variable
+         (let ([pos (env:app env v)])
+           ;(printf "emit-var: ~a  ~a\n" v pos)
+           (emit "   movl ~s(%esp), %eax # var:~s" pos v))]
+        [`(make-vec ,n)
+          (emit-make-vec n)]
+        [`(vec-ref ,v ,i)
+          (emit-vec-ref v i)]
+        [`(vec-set! ,v ,i ,val)
+          (emit-vec-set! v i val)]
+        [`(vec ,v* ...)
+          (emit-vec-from-values v*)]
+        [(list (? unop? op) v)
+         (emit-unop op v)]
+        [(list (? biop? op) a b)
+         (emit-biop op a b)]
+        [`(if ,test ,then ,else)
+          ((emit-exp si env #f) test)
+          (let ((else-lbl (gen-label))
+                (endif-lbl (gen-label)))
+            ; jump to else if equal to false
+            ; Que: how to optimize this?
+            (emit "   cmpl $~s, %eax" bool-f)
+            (emit "   je ~a" else-lbl)
+            (emit-exp1 then)
+            (emit "   jmp ~s" endif-lbl)
+            (emit "~s:" else-lbl)
+            (emit-exp1 else)
+            (emit "~s:" endif-lbl))]
+        [`(let ((,v* ,e*) ...) ,body)
+          (match (emit-decls si env #f v* e*)
+            [(list si env)
+             ((emit-exp si env tail?)
+              body)])]
+        [`(lambda (,v* ...) ,body)
+          (error 'emit-exp "lambda should be converted to procedure")]
+        [`(begin ,exp* ...)
+          (let loop ([exps exps])
+            (cond
+              [(null? exps)
+               (error 'begin "empty body")]
+              [(null? (cdr exps))
+               (emit-exp1 (car exps))]
+              [else
+                ((emit-exp si env #f) (car exps))
+                (loop (cdr exps))]))]
+        [`(labels ([,f* ,proc*] ...) ,exp)
+          (for-each
+            (lambda (f proc)
+              (add-global-proc! f proc))
+            f*
+            proc*)
+          (emit-exp1 exp)]
+        [`(app-proc ,rator ,rand* ...)
+          (emit-call-proc rator rand*)]
+        [`(closure ,f ,rv)
+          (emit-closure f rv)]
+        [`(app ,rator ,rand* ...)
+          (emit-app rator rand*)]
+        [_ (error 'emit-exp "~a not matched" exp)]
+        )))
+  emit-exp1))
 
 ; eval(e) could be an address or label
 (define (emit-decl si env v e)
@@ -473,7 +481,7 @@
        (error 'emit-decls "vs and es have different length")]
       [else
         ((emit-exp si env tail?) (car cur-es))
-        (emit "   movl %eax, ~s(%esp)" si)
+        (emit "   movl %eax, ~s(%esp) # move declared value to stack" si)
         (loop (- si wordsize)
               (cdr cur-vs)
               (cdr cur-es)
@@ -493,7 +501,7 @@
   (emit "   sar $~s, %~a" fxshift reg))
 (define (emit-add-fxtag reg)
   ; sign extension
-  (emit "   sal $~s, %~a" fxshift reg))
+  (emit "   sal $~s, %~a # add fxtag" fxshift reg))
 (define (emit-remove-cljtag reg)
   (emit "   subl $~s, %~a # remove cljtag" cljtag reg))
 (define (emit-add-cljtag reg)
@@ -502,7 +510,7 @@
 (define (emit-remove-vectag reg)
   (emit "   subl $~s, %~a" vectag reg))
 (define (emit-add-vectag reg)
-  (emit "   orl $~s, %~a" vectag reg))
+  (emit "   orl $~s, %~a # add vectag" vectag reg))
 
 (define gen-label
   (let ([count 0])
@@ -520,7 +528,7 @@
 
 ; move eax to stack
 (define (emit-eax->stack si)
-  (emit "   movl %eax, ~s(%esp)" si))
+  (emit "   movl %eax, ~s(%esp) # save eax value to stack" si))
 
 ; return si
 (define (emit-exps-leave-last si env exps)
@@ -537,16 +545,22 @@
         (let ([si (emit-exps-push-all si env first)])
           (emit-exps-leave-last si env rest)
           si))]))
+
 (define (emit-exps-push-all si env exps)
   ; emit mutli exps, all pushed to stack
-  (foldl
-    (match-lambda*
-      [(list exp si)
-       ((emit-exp si env #f) exp)
-       (emit-eax->stack si)
-       (- si wordsize)])
-    si
-    exps))
+  (emit "# emit-exps-push-all")
+  (let ([new-si
+          (foldl
+            (match-lambda*
+              [(list exp si)
+               ((emit-exp si env #f) exp)
+               (emit-eax->stack si)
+               (- si wordsize)])
+            si
+            exps)])
+    (emit "# emit-exps-push-all end")
+    new-si)
+  )
 
 ; swap i(%base) j(%base)
 (define (emit-swap i j [base 'esp])
@@ -586,6 +600,23 @@
 (define (emit-stack->heap stack-pos heap-pos)
   (emit "   movl ~s(%esp), %ecx" stack-pos)
   (emit "   movl %ecx, ~s(%ebp)" heap-pos))
+
+; move [start ... end] to [to_start ...]
+(define (emit-stack-move-range start step end to_start)
+  (emit "# emit-stack-move-range ~a ~a ~a ~a"
+        start step end to_start)
+  (let ([cmp (range-param-check start step end)])
+    (let loop ([from start]
+               [to to_start])
+      (cond
+        [(cmp from end) (void)]
+        [else
+          ;(printf "move ~a to ~a\n" from end)
+          (emit-swap from to)
+          (loop (+ from step)
+                (+ to step))])))
+  (emit "# emit-stack-move-range end")
+  )
 
 #|(load "tests-1.3-req1.scm")
 (load "tests-1.4-req.scm")

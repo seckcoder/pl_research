@@ -44,6 +44,7 @@
          range
          range-len
          range-of-i
+         range-param-check
          )
 
 (define anything?
