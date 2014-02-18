@@ -578,5 +578,5 @@
 ; (load "tests-1.8-opt.scm")
 ; (load "tests-sexp.scm")
 ;(load "tests-print.scm")
-(load "tests-proc.scm")
+;(load "tests-proc.scm")
 ;(load "tests-vector.scm")

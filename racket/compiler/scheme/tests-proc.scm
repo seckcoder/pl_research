@@ -22,3 +22,5 @@
           (+ x v))
         v)) 3) => "6\n"]
   )
+
+(add-tests-with-string-output "tail-call")
