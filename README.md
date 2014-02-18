@@ -17,9 +17,10 @@ It contains or will contain:
     - closure support
     - optimization based on cps transformation
   * a scheme compiler compiles to C
-- fp
+- fp and others
   * monad experiments
   * macro experiments
+  * pure functional implementation of various data structures
 
 elegant-weapons
 ---------
