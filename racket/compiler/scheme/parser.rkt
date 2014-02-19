@@ -15,6 +15,7 @@
          ,(parse `(let* ,bind* ,@body)))]
     [(? immediate?) x]
     [(? symbol?) x]
+    [`(quote ,v) x]
     [`(eq? ,a ,b)
       (cond
         [(and (fixnum? a) (fixnum? b))

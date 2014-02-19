@@ -61,16 +61,12 @@
        (exact? x)
        (<= fxlower x fxupper)))
 
-; sexp:symbol | pair of symbols 
-(define (quoted? x)
-  (and (pair? x) (eq? (car x) 'quote)))
 (define (immediate? x)
   (or (fixnum? x)
       (boolean? x)
       (char? x)
       (null? x)
       (string? x)
-      (quoted? x)
       ))
 
 (define (immediate-rep x)

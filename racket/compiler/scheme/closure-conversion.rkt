@@ -1,70 +1,66 @@
 #lang racket
 
 (require "base.rkt"
+         "global.rkt"
          "../../base/utils.rkt")
 
 (provide closure-conversion)
 (define (closure-conversion e dir)
-  (let* ([procs '()]
-         [add-proc! (lambda (proc-n code)
-                      (set! procs (cons (list proc-n code)
-                                        procs)))])
-    (letrec ([cvt1 (lambda (e)
-                     (match e
-                       [`(lambda (,v* ...) ,body)
-                         (let ([fvs (set->list (free e))]
-                               [proc-n (gensym 'proc_)]
-                               [r (gensym 'env)])
-                           (add-proc!
-                             proc-n
-                             `(proc ,(cons r v*)
-                                    ,(subst body r fvs)))
-                           `(closure ,proc-n
-                                     (vec ,@fvs)))]
-                       [_ e]
-                       ))]
-             [cvt-up (lambda (e)
-                       (define (cvt-up1 e)
-                         (match e
-                           [(? immediate?)
-                            e]
-                           [(? symbol?)
-                            e]
-                           [(list (? prim-op? op) v* ...)
-                            `(,op ,@(map cvt-up v*))]
-                           [`(if ,test ,then ,else)
-                             `(if ,(cvt-up test)
-                                ,(cvt-up then)
-                                ,(cvt-up else))]
-                           [`(let ((,v* ,e*) ...) ,body)
-                             `(let ,(map list v* (map cvt-up e*))
-                                ,(cvt-up body))]
-                           [`(begin ,exp* ...)
-                             `(begin
-                                ,@(map cvt-up exp*))]
-                           [`(labels ((,v* ,e*) ...) ,exp)
-                             ; for debugging purpose
-                             e]
-                           [`(lambda (,v* ...) ,body)
-                             `(lambda ,v*
-                                ,(cvt-up body))]
-                           [`(app ,rator ,rand* ...)
-                             (let ([rator (cvt-up rator)]
-                                   [rand* (map cvt-up rand*)])
-                               `(app ,rator ,@rand*))]
-                           [`(app-proc ,rator ,rand* ...)
-                             ; for debuggin purpose
-                             e]
-                           [_ (error 'cvt-up "~a not match" e)]
-                           ))
-                       (cvt1 (cvt-up1 e)))]
-             [cvt-down (lambda (e) e)]
-             [cvt (lambda (e)
-                    (if (eq? dir 'topdown)
-                      (cvt-down e)
-                      (cvt1 (cvt-up e))))])
-      (let ([e (cvt e)])
-        `(labels ,procs ,e)))))
+  (letrec ([cvt1 (lambda (e)
+                   (match e
+                     [`(lambda (,v* ...) ,body)
+                       (let ([fvs (set->list (free e))]
+                             [proc-n (gensym 'proc_)]
+                             [r (gensym 'env)])
+                         (add-global!
+                           proc-n
+                           `(proc ,(cons r v*)
+                                  ,(subst body r fvs)))
+                         `(closure ,proc-n
+                                   (vec ,@fvs)))]
+                     [_ e]
+                     ))]
+           [cvt-up (lambda (e)
+                     (define (cvt-up1 e)
+                       (match e
+                         [(? immediate?)
+                          e]
+                         [(? symbol?)
+                          e]
+                         [(list (? prim-op? op) v* ...)
+                          `(,op ,@(map cvt-up v*))]
+                         [`(if ,test ,then ,else)
+                           `(if ,(cvt-up test)
+                              ,(cvt-up then)
+                              ,(cvt-up else))]
+                         [`(let ((,v* ,e*) ...) ,body)
+                           `(let ,(map list v* (map cvt-up e*))
+                              ,(cvt-up body))]
+                         [`(begin ,exp* ...)
+                           `(begin
+                              ,@(map cvt-up exp*))]
+                         [`(labels ((,v* ,e*) ...) ,exp)
+                           ; for debugging purpose
+                           e]
+                         [`(lambda (,v* ...) ,body)
+                           `(lambda ,v*
+                              ,(cvt-up body))]
+                         [`(app ,rator ,rand* ...)
+                           (let ([rator (cvt-up rator)]
+                                 [rand* (map cvt-up rand*)])
+                             `(app ,rator ,@rand*))]
+                         [`(app-proc ,rator ,rand* ...)
+                           ; for debuggin purpose
+                           e]
+                         [_ (error 'cvt-up "~a not match" e)]
+                         ))
+                     (cvt1 (cvt-up1 e)))]
+           [cvt-down (lambda (e) e)]
+           [cvt (lambda (e)
+                  (if (eq? dir 'topdown)
+                    (cvt-down e)
+                    (cvt1 (cvt-up e))))])
+    (cvt e)))
 
 (define free
   (lambda (e)
