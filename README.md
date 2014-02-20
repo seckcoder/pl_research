@@ -12,11 +12,11 @@ It contains or will contain:
   * fast interpreter based pre static analysis
   * a minikanren interpreter
 - compiler
-  * a scheme compiler that compiles to x86
+  * seck-scheme: a scheme compiler that compiles to x86
     - basic data type: fixnumber, char, bool, string, vector
     - closure support
-    - optimization based on cps transformation
     - tail call optimization
+    - TODO: GC, Optimization based on cps transformation
   * a scheme compiler compiles to C
 - fp and others
   * monad experiments
