@@ -11,13 +11,14 @@
          "global.rkt")
 
 (define (compile-program x)
+  (init-global!)
   (~> x
       parse
       (lambda (e)
         (closure-conversion e 'bottom-up))
       emit-program))
 
-(define (emit-global-proc n code)
+(define (emit-global n code)
   (match code
     [`(proc (,v* ...) ,body)
       (emit "~s:" n)
@@ -31,14 +32,15 @@
                    env
                    #t) body)
         (emit "   ret")
-        )]))
+        )]
+    ))
 
-(define (emit-global-proc*)
+(define (emit-global*)
   (for-each
     (match-lambda
       [(list n code)
-       (emit-global-proc n code)])
-    *proc*))
+       (emit-global n code)])
+    *global*))
 ; lift lambda
 (define-syntax def-lifted-lambda
   (syntax-rules ()
@@ -48,7 +50,6 @@
                 `(proc (v* ...) body))]))
 
 (define (emit-program x)
-  (init-global!)
   (emit "   .text")
   ; We need L_scheme_entry since we need to make sure that when starting
   ; to emit-exp, the value above %esp is a return address. Otherwise,
@@ -444,7 +445,7 @@
         [`(labels ([,f* ,proc*] ...) ,exp)
           (for-each
             (lambda (f proc)
-              (add-global-proc! f proc))
+              (add-global! f proc))
             f*
             proc*)
           (emit-exp1 exp)]
