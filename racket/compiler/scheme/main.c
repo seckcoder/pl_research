@@ -1,5 +1,7 @@
 #include "runtime.h"
 
+
+int scheme_entry();
 int main(int argc, char** argv) {
   memory mem;
   context ctx;

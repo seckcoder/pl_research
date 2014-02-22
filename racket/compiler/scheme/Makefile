@@ -2,8 +2,7 @@ all:main
 
 RUNTIMEOBJ=runtime.c
 clean:
-	rm -f stst *.s *.out test
-	rm -f *.o
+	rm -f stst *.o *.s *.out test
 
 scheme:
 	gcc -O1 -o stst start.c stst.s

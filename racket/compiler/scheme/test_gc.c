@@ -10,10 +10,6 @@ char* next_heap_pos(char* heap) {
   return heap + wordsize;
 }
 
-char* add_vectag(char* p) {
-  return (p + vec_tag);
-}
-
 void set_word_value(void* p, int v) {
   set_word(p, &v);
 }

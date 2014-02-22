@@ -186,6 +186,12 @@ int vector_ref(vector v, int i) {
   return v[i+1];
 }
 
+char* add_vectag(char* p) {
+  return (p + vec_tag);
+}
+
+
+
 // recursive version of gc_forward
 // DFS search
 void gc_forward_rec(char* p, char* pp, memory* mem) {
@@ -342,9 +348,6 @@ void deallocate_protected_space(char* p, int size) {
   if (status != 0) { perror("munmap"); exit(status); }
 }
 
-
-
-int scheme_entry();
 
 void allocate_memory(memory* mem, unsigned int stack_size, unsigned int heap_size, unsigned int global_size) {
   char* mem_stack_base = allocate_protected_space(stack_size);
