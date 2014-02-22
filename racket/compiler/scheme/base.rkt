@@ -93,7 +93,7 @@
                                    fixnum?  number? char? null?
                                    boolean? not zero?
                                    car cdr pair?
-                                   print
+                                   print length
                                    )))
 
 (define (biop? op)

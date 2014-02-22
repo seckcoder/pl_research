@@ -13,4 +13,7 @@
   [(let ([vec (vec 1 2 3 4 5)])
      (vec-ref vec 0)) => "1\n"]
   [(vec-ref (vec 1 2) 1) => "2\n"]
+  [(length (vec 1 2 3)) => "3\n"]
+  [(let ([vec (make-vec 5)])
+     (length vec)) => "5\n"]
   )

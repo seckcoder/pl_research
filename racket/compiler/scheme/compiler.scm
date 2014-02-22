@@ -196,6 +196,9 @@
          (emit "   movl ~s(%esp), %ebp" wordsize) ; restore %ebp
          (emit "   subl $~s, %esp" (- si wordsize))
          (emit "   movl $~s, %eax" (immediate-rep 0))]
+        ['length
+         (emit-remove-vectag 'eax)
+         (emit "   movl (%eax), %eax # move vector length to eax")]
         [_ (error 'emit-unop "~a is not an unary operator" op)]))
     (define (emit-biop op a b)
       (define (emit-*)
@@ -285,8 +288,8 @@
       (emit "   subl $~s, %esp" (+ wordsize new-si))))
   (define (emit-make-vec n)
     ((emit-exp si env #f) n)
-    (emit-remove-fxtag 'eax) ; %eax store length
     (emit "   movl %eax, ~s(%esp) #store length to stack" si)
+    (emit-remove-fxtag 'eax) ; %eax store length
     (emit-calc-vector-size)
     (emit-alloc-heap (- si wordsize) #f) ; vec length on stack
     (emit-stack->heap si 0)
@@ -319,7 +322,8 @@
            [new-si (emit-exps-push-all si env vs)])
       (emit-alloc-heap new-si
                        (* (add1 len) wordsize))
-      (emit "   movl $~s, (%eax) # move length to vector" len)
+      (emit "   movl $~s, (%eax) # move length to vector"
+            (immediate-rep len))
       (let loop ([i 0])
         (unless (>= i len)
           ; move the ith item from stack to heap
