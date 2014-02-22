@@ -343,107 +343,36 @@ void deallocate_protected_space(char* p, int size) {
 }
 
 
-// gc debugging code
-
-
-static int heap_size = 0;
-
-
-char* next_stack_pos(char* stack) {
-  return stack - wordsize;
-}
-
-char* next_heap_pos(char* heap) {
-  return heap + wordsize;
-}
-
-char* add_vectag(char* p) {
-  return (p + vec_tag);
-}
-
-void set_word_value(void* p, int v) {
-  set_word(p, &v);
-}
-
-char* vector_alloc(memory* mem, char* stack, unsigned int len, int *v) {
-  char* heap = heap_alloc(mem, stack, align_heap((len+1)*wordsize));
-  char* pv = heap;
-  set_word_value(heap, to_fixnum_rep(len));
-  heap = next_heap_pos(heap);
-  int i = 0;
-  for(i = 0; i < len; i++) {
-    /*set_word(heap, &v[i]);*/
-    set_word_value(heap, to_fixnum_rep(v[i]));
-    heap = next_heap_pos(heap);
-  }
-  return add_vectag(pv);
-}
-
-void debug_main(memory* mem) {
-  char* stack = mem->stack_top; // stack on top
-  int v1[2] = {1, 2};
-  char* pv1 = vector_alloc(mem, stack, 2, v1);
-  int v2[1] = {3};
-  vector_alloc(mem, stack, 1, v2);
-  stack = next_stack_pos(stack);
-  set_word(stack, &pv1); // stack point to pv1;
-  int v3[1] = {4};
-  char* pv3 = vector_alloc(mem, stack, 1, v3); // allocate 8 bytes space, gc started.
-  pv1 = (char*)get_word(stack);
-  print_ptr((ptr)pv1);
-  /*print_ptr((ptr)pv2);*/
-  print_ptr((ptr)pv3);
-  printf("%u %u\n", (ptr)mem->heap, (ptr)mem->heap_base);
-}
 
 int scheme_entry();
-int main(int argc, char** argv) {
-  int stack_size = 16 * 4096;
-  if (debug_gc | test_gc) {
-    heap_size = 64;
-  } else {
-    heap_size = (4 * 16 * 4096);
-  }
-  int global_size = 16 * 4096;
-  char* stack_base = allocate_protected_space(stack_size);
-  char* heap_base = allocate_protected_space(heap_size);
-  char* global_base = allocate_protected_space(global_size);
-  memset(stack_base, 0, stack_size);
-  memset(heap_base, 0, heap_size);
-  memset(global_base, 0, global_size);
 
-  memory mem;
-  mem.heap = heap_base;
-  mem.global = global_base;
-  mem.heap_base = heap_base;
-  mem.heap_top = mem.heap_base + heap_size/2;
-  mem.heap_base1 = mem.heap_top;
-  mem.heap_top1 = mem.heap_base + heap_size;
-  mem.stack_base = stack_base;
-  mem.stack_top = mem.stack_base + stack_size;
-  mem.global_base = global_base;
-  mem.global_top = mem.global_base + global_size;
+void allocate_memory(memory* mem, unsigned int stack_size, unsigned int heap_size, unsigned int global_size) {
+  char* mem_stack_base = allocate_protected_space(stack_size);
+  char* mem_heap_base = allocate_protected_space(heap_size);
+  char* mem_global_base = allocate_protected_space(global_size);
+  memset(mem_stack_base, 0, stack_size);
+  memset(mem_heap_base, 0, heap_size);
+  memset(mem_global_base, 0, global_size);
 
-
-  context ctx;
-  if (debug_gc) {
-    debug_main(&mem);
-  } else {
-    print_ptr(scheme_entry(&ctx, mem.stack_top,
-          &mem));
-  }
-  deallocate_protected_space(stack_base, stack_size);
-  deallocate_protected_space(heap_base, heap_size);
-  deallocate_protected_space(global_base, global_size);
-  return 0;
+  mem->heap = mem_heap_base;
+  mem->global = mem_global_base;
+  mem->heap_base = mem_heap_base;
+  mem->heap_top = mem->heap_base + heap_size/2;
+  mem->heap_base1 = mem->heap_top;
+  mem->heap_top1 = mem->heap_base + heap_size;
+  mem->stack_base = mem_stack_base;
+  mem->stack_top = mem->stack_base + stack_size;
+  mem->global_base = mem_global_base;
+  mem->global_top = mem->global_base + global_size;
+  mem->heap_perm_base = mem_heap_base;
+  mem->heap_perm_top = mem_heap_base + heap_size;
 }
 
-
-/*int main(int argc, const char *argv[])
-{
-  int a = 2;
-  int b = 3;
-  set_word((char*)&a, (char*)&b);
-  printf("%d %d\n", a, b);
-  return 0;
-}*/
+void delete_memory(memory* mem) {
+  deallocate_protected_space(mem->stack_base,
+      mem->stack_top - mem->stack_base);
+  deallocate_protected_space(mem->heap_perm_base,
+      mem->heap_perm_top - mem->heap_perm_base);
+  deallocate_protected_space(mem->global_base,
+      mem->global_top - mem->global_base);
+}

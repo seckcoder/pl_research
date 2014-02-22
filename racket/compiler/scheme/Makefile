@@ -1,8 +1,16 @@
-all:ctest
+all:main
+
+RUNTIMEOBJ=runtime.c
 clean:
 	rm -f stst *.s *.out test
+	rm -f *.o
+
 scheme:
 	gcc -O1 -o stst start.c stst.s
+
+test:$(RUNTIMEOBJ) test_gc.o
+	gcc -o $@ $^
+
 ctest:ctest.c
 	clang -S ctest.c
 	cat ctest.s
