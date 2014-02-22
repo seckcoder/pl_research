@@ -1,3 +1,3 @@
 (add-tests-with-string-output "divide"
-  [(quotient 5 2) => "2\n"]
-  [(remainder 5 2) => "1\n"])
+  [(quotient 100 3) => "33\n"]
+  [(remainder 100 3) => "1\n"])

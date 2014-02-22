@@ -629,7 +629,7 @@
         (+ si (* 2 wordsize)))
   (emit-remove-fxtag 'edx)
   (emit "   movl %edx, %eax")
-  (emit "   sarl $~s, %edx # set edx as 0 or all 1" (sub1 wordsize))
+  (emit "   sarl $~s, %edx # set edx as 0 or all 1" (sub1 (* 8 wordsize)))
   (emit "   movl ~s(%esp), %ecx #divisor" (+ si wordsize))
   (emit-remove-fxtag 'ecx)
   (emit "   idivl %ecx")
