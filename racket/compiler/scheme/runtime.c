@@ -96,6 +96,20 @@ void print_pair(ptr x) {
   }
 }
 
+void print_vector(vector x) {
+  int len = vector_length(x);
+  printf("%d: [", len);
+  int i = 0;
+  for(i = 0; i < len; i++) {
+    print_ptr_rec((ptr)(vector_ref(x, i)));
+    assert(get_word(vector_pi(x, i)) == vector_ref(x,i));
+    if (i < len-1) {
+      printf(", ");
+    }
+  }
+  printf("]");
+}
+
 void print_ptr_rec(ptr x) {
   /*printf("%u\n", x);*/
   if (is_fixnum(x)) {
@@ -112,7 +126,9 @@ void print_ptr_rec(ptr x) {
     printf("(");
     print_pair(x);
     printf(")");
-  } else {
+  } else if (is_vector(x)) {
+    print_vector(to_vector((ptr)x));
+  }  else {
     printf("#<unknown 0x%08x>", x);
   }
 }
@@ -152,14 +168,22 @@ void mark_forward(char *p, char *new_p) {
   set_word(p + wordsize, (int)new_p);
 }
 
-// get length of the vector stored in p
-int vector_length(char* p) {
-  return get_word(p);
+vector to_vector(ptr p) {
+  return (vector)(p - vec_tag);
 }
 
-// get the pointer to the i's value of vector:p
-char* vector_ref(char* p, int i) {
-  return p + (i+1)*wordsize;
+// get length of the vector stored in p
+int vector_length(vector v) {
+  return to_fixnum(v[0]);
+}
+
+// get ith pointer of vector
+char* vector_pi(vector v, int i) {
+  return (char*)&v[i+1];
+}
+// get ith value of vector
+int vector_ref(vector v, int i) {
+  return v[i+1];
 }
 
 // recursive version of gc_forward
@@ -169,7 +193,8 @@ void gc_forward_rec(char* p, char* pp, memory* mem) {
     set_word(pp, (int)(get_forward_ptr((ptr)p)));
   } else if (is_heap_ptr((ptr)p)) {
     if (is_vector((ptr)p)) {
-      int vec_size = vector_length(p) * wordsize + wordsize;
+      vector vec = to_vector((ptr)p);
+      int vec_size = vector_length(vec) * wordsize + wordsize;
       char* new_p = mem->heap;
       mem->heap += vec_size;
       memcpy(p, new_p, vec_size);  // copy content
@@ -193,22 +218,22 @@ char* gc_forward(char* p, memory* mem) {
     // not a pointer to heap
     // should be immediate value
     return p;
-  }
-
-  if (is_forward_ptr((ptr)p)) {
+  } else if (is_forward_ptr((ptr)p)) {
     // forward p to new space
     return get_forward_ptr((ptr)p); // get ptr
-  }
-
-  if (is_vector((ptr)p)) {
-    int vec_size = (vector_length(p) + 1) * wordsize;
+  } else if (is_vector((ptr)p)) {
+    vector vec = to_vector((ptr)p);
+    int vec_size = (vector_length(vec) + 1) * wordsize;
     char* new_p = mem->heap;
     mem->heap += vec_size;
     memcpy(p, new_p, vec_size); // copy content of p to new space
     set_heap_ptr_tag((ptr*)&new_p, vec_tag); // add tag for new_p
     mark_forward(p, new_p); // p->new_p
+    return new_p;
+  } else {
+    print_ptr((ptr)p);
+    exit(20);
   }
-  return NULL;
 }
 
 void swap_mem_heap(memory* mem) {
@@ -221,7 +246,7 @@ void swap_mem_heap(memory* mem) {
 }
 
 void reset_memory(char* start, char* end) {
-  memset(start, 0, end-start+1);
+  memset(start, 0, end-start);
 }
 
 // stop and copy garbage collection.
@@ -250,10 +275,11 @@ void gc(memory *mem, char* stack) {
   while (scan < alloc) {
     char* p = (char*)get_word(scan);
     if (is_vector((ptr)p)) {
-      int vec_len = vector_length(p);
+      vector vec = to_vector((ptr)p);
+      int vec_len = vector_length(vec);
       int i = 0;
       for(i = 0; i < vec_len; i+=1) {
-        char* pvi = vector_ref(p, i); // pointer to ith element of vector
+        char* pvi = vector_pi(vec, i); // pointer to ith element of vector
         char* vi = (char*)get_word(pvi); // get ith element
         char* new_vi = gc_forward(vi, mem);
         assert(new_vi!= NULL);
@@ -276,7 +302,7 @@ char* heap_alloc(memory *mem, char* stack, int size) {
   if (mem->heap + size >= mem->heap_top) {
     gc(mem, stack);
   }
-  assert((mem->heap + size) <= mem->heap_top);
+  assert((mem->heap + size) < mem->heap_top);
   mem->heap += size;
   return mem->heap;
   // allocate at mem->heap
@@ -310,7 +336,7 @@ void deallocate_protected_space(char* p, int size) {
 
 int scheme_entry();
 int main(int argc, char** argv) {
-  int stack_size = 16 * 4096; // 16K byte
+  int stack_size = 16 * 4096; //  16K byte
   int heap_size = (4 * 16 * 4096);
   int global_size = 16 * 4096;
   char* stack_base = allocate_protected_space(stack_size);
@@ -328,6 +354,7 @@ int main(int argc, char** argv) {
   mem.stack_top = mem.stack_base + stack_size;
   mem.global_base = global_base;
   mem.global_top = mem.global_base + global_size;
+  reset_memory(mem.heap_base1, mem.heap_top1);
   context ctx;
   print_ptr(scheme_entry(&ctx, mem.stack_top,
         &mem));

@@ -15,23 +15,24 @@
 (define boolmask #x3F)
 (define booltag #x2F)
 (define wordsize 4) ; 4byte
-(define pairmask #x03)
+; pair,closure,symbol,vector,string...are object
+(define objshift 3)
+(define objmask #x07)
+(define objtag #x07)
+(define pairmask objmask)
 (define pairtag #x01)
-(define cljmask #x03)
+(define cljmask objmask)
 (define cljtag #x02)
-(define cljshift 3)
+(define cljshift objshift)
 ; symbol is also atom
-(define symmask #x03)
+(define symmask objmask)
 (define symtag #x03)
-(define symshift 3)
-(define vecmask #x03)
+(define symshift objshift)
+(define vecmask objmask)
 (define vectag #x05)
-(define vecshift 3)
-(define strmask #x03)
+(define vecshift objshift)
+(define strmask objmask)
 (define strtag #x06)
-; for other immediate and objects
-#|(define objmask #x03)
-(define objtag #x07)|#
 (define heap-align 8)
 
 ; offset of heap, global

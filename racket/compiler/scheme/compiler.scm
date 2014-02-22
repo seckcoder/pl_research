@@ -261,7 +261,7 @@
               (emit "   movl ~s(%esp), %ecx" si) ; copy a to temporary
               (emit "   movl %ecx, (%ebp)") ; copy a to heap
               (emit "   movl %ebp, %eax")
-              (emit "   orl $~s, %eax" pairtag)
+              (emit-add-pairtag 'eax)
               ; assert 2*wordsize = n * heap-align
               (emit "   addl $~s, %ebp" (* 2 wordsize))
               ; baseptr + 2 * wordsize is 8-byte aligned.
@@ -515,6 +515,10 @@
   (emit "   subl $~s, %~a" vectag reg))
 (define (emit-add-vectag reg)
   (emit "   orl $~s, %~a # add vectag" vectag reg))
+(define (emit-add-pairtag reg)
+  (emit "   orl $~s, %~a # add pairtag" pairtag reg))
+(define (emit-remove-pairtag reg)
+  (emit "   subl $~s, %~a" pairtag reg))
 
 (define gen-label
   (let ([count 0])
@@ -678,11 +682,11 @@
 (load "tests-1.6-req.scm")|#
 ;(load "tests-1.6-opt.scm")
 ;(load "tests-1.5-req.scm")
-(load "tests-1.5-opt.scm")
+;(load "tests-1.5-opt.scm")
 
 ; (load "tests-1.8-opt.scm")
 ; (load "tests-sexp.scm")
 ;(load "tests-print.scm")
 ;(load "tests-proc.scm")
-;(load "tests-vector.scm")
+(load "tests-vector.scm")
 ;(load "tests-gc.scm")

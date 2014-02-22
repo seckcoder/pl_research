@@ -6,21 +6,23 @@
 #define null_v 0x3F
 #define wordsize 4
 #define fx_tag 0x00
+#define objshift 3
+#define objmask 0x07
 #define char_tag 0x0F
 #define charmask 0xFF
 #define charshift 8
 #define pair_tag 0x01
-#define pairmask 0x03
-#define symmask 0x03
+#define pairmask objmask
+#define symmask objmask
 #define symtag 0x03
 #define symshift 3
-#define cljmask 0x03
+#define cljmask objmask
 #define clj_tag 0x02
 #define cljshift 3
-#define vecmask 0x03
+#define vecmask objmask
 #define vec_tag 0x05
 #define vecshift 3
-#define strmask 0x03
+#define strmask objmask
 #define str_tag 0x06
 #define gc_forward_tag 0x47
 #define gc_forward_mask 0xFF
@@ -61,7 +63,17 @@ typedef struct {
   ptr cdr;
 } pair;
 
+typedef int* vector;
+
 // ptr points to heap
 int is_heap_ptr(ptr p);
 int is_vector(ptr p);
 void set_heap_ptr_tag(ptr *p, int tag);
+
+void print_ptr(ptr x);
+void print_ptr_rec(ptr x) ;
+int vector_length(vector v);
+vector to_vector(ptr p) ;
+char* vector_pi(vector v, int i);
+int vector_ref(vector v, int i);
+int get_word(char *p);
