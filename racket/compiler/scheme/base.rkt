@@ -34,6 +34,10 @@
 (define objtag #x07)|#
 (define heap-align 8)
 
+; offset of heap, global
+(define heap-offset 0)
+(define global-offset 4)
+
 (define registers
   '((eax . scratch)
     (ebx . preserve)

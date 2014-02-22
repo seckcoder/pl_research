@@ -86,7 +86,7 @@
 
 (define runtime-file 
   (make-parameter
-    "startup.c"
+    "runtime.c"
     (lambda (fname)
       (unless (string? fname)
         (error 'runtime-file (format "not a string ~s" fname)))

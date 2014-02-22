@@ -63,7 +63,7 @@
   (emit "   movl %esp, %ecx # store esp temporarily")
   ; heap : low->high
   ; stack : high->low
-  (emit "   movl 12(%ecx), %ebp # set heap pointer")
+  (emit "   movl 12(%ecx), %ebp # set mem pointer")
   (emit "   movl 8(%ecx), %esp # set stack pointer")
   (emit "   pushl 4(%ecx) # store ctx")
   ; It's an assumption that physical addresses on Intel's
@@ -286,24 +286,20 @@
   (define (emit-make-vec n)
     ((emit-exp si env #f) n)
     (emit-remove-fxtag 'eax) ; %eax store length
-    (emit "   movl %eax, (%ebp)") ; move length to heap
-    (emit "   movl %eax, %ebx") ; store length in %ebx
-    (emit "   movl %ebp, %eax") ; return as pointer
-    (emit-add-vectag 'eax)
-    (emit "   addl $1, %ebx") ; we store (len+1) value
-    (emit "   imull $~s, %ebx" wordsize) ; calculate address of ebp
-    (emit "   addl %ebx, %ebp")
-    (emit "   addl $~s, %ebp" (sub1 heap-align)) ; align heap address
-    (emit "   andl $~s, %ebx" (- heap-align)))
+    (emit "   movl %eax, ~s(%esp)" si) ; store length to stack
+    (emit-calc-vector-size)
+    (emit-alloc-heap (- si wordsize) #f) ; vec length on stack
+    (emit-stack->heap si 0)
+    (emit-add-vectag 'eax))
   (define (emit-vec-ref v i)
     ; TODO: out-of-bounds check?
     (emit-exps-leave-last si env (list v i))
     ; remove i's flag
     (emit-remove-fxtag 'eax)
-    (emit "   movl ~s(%esp), %ecx" si) ; v
-    ; %ecx + %eax*wordsize + wordsize. extra wordsize is for vector length
+    (emit "   movl ~s(%esp), %ecx # transfer vec to ecx" si) ; v
     (emit-remove-vectag 'ecx)
-    (emit "   movl ~s(%ecx, %eax, ~s), %eax" wordsize wordsize)
+    ; %ecx + %eax*wordsize + wordsize. extra wordsize is for vector length
+    (emit "   movl ~s(%ecx, %eax, ~s), %eax # get ith(in eax) value of vec" wordsize wordsize)
     )
   (define (emit-vec-set! v i val)
     (emit-exps-leave-last si env (list v i val))
@@ -320,21 +316,16 @@
     ; Since when evaluate the value, it may change ebp
     (emit "# emit-vec-from-values")
     (emit-exps-push-all si env vs)
+    (emit-alloc-heap si (* (add1 (length vs)) wordsize))
     (let ([len (length vs)])
-      (emit "   movl $~s, (%ebp) # move length to vector" len)
+      (emit "   movl $~s, (%eax) # move length to vector" len)
       (let loop ([i 0])
         (unless (>= i len)
           ; move the ith item from stack to heap
           (emit-stack->heap (- si (* i wordsize))
                             (* (add1 i) wordsize))
           (loop (add1 i))))
-      (emit "   movl %ebp, %eax") ; return pointer
       (emit-add-vectag 'eax)
-      ; adjust heap pointer
-      (emit "   addl $~s, %ebp"
-            (+ (* (add1 len) wordsize)
-               (sub1 heap-align))) ; align heap
-      (emit "   andl $~s, %ebp" (- heap-align))
       )
     (emit "# emit-vec-from-values end")
     )
@@ -389,6 +380,11 @@
           (emit "   call *%ecx")
           (emit "   subl $~s, %esp" (+ si wordsize)))))
     (emit "# emit-app end"))
+  (define (emit-let vs es body)
+    (match (emit-decls si env #f vs es)
+      [(list si env)
+       ((emit-exp si env tail?)
+        body)]))
   ; ## emit-exp1 ##
   (define emit-exp1
     (lambda (exp)
@@ -426,14 +422,11 @@
             (emit-exp1 else)
             (emit "~s:" endif-lbl))]
         [`(let ((,v* ,e*) ...) ,body)
-          (match (emit-decls si env #f v* e*)
-            [(list si env)
-             ((emit-exp si env tail?)
-              body)])]
+          (emit-let v* e* body)]
         [`(lambda (,v* ...) ,body)
           (error 'emit-exp "lambda should be converted to procedure")]
         [`(begin ,exp* ...)
-          (let loop ([exps exps])
+          (let loop ([exps exp*])
             (cond
               [(null? exps)
                (error 'begin "empty body")]
@@ -599,8 +592,9 @@
                    si))
 
 (define (emit-stack->heap stack-pos heap-pos)
-  (emit "   movl ~s(%esp), %ecx" stack-pos)
-  (emit "   movl %ecx, ~s(%ebp)" heap-pos))
+  ; heap ptr stored in eax
+  (emit "   movl ~s(%esp), %ecx # move stack value to heap" stack-pos)
+  (emit "   movl %ecx, ~s(%eax)" heap-pos))
 
 ; move [start ... end] to [to_start ...]
 (define (emit-stack-move-range start step end to_start)
@@ -619,6 +613,35 @@
   (emit "# emit-stack-move-range end")
   )
 
+(define (emit-calc-vector-size)
+  ; length in %eax
+  (emit "   addl $1, %eax") ; length stored in vector
+  (emit "   immul $~s, %eax" wordsize))
+
+(define (emit-alloc-heap1 si)
+  ; heap-aligned size in eax
+  ; heap_alloc(mem, stack, size)
+  (emit "   movl %eax, ~s(%esp) # size to stack" si)
+  (emit "   leal ~s(%esp), ~s(%esp) # esp to stack" (+ si wordsize)
+        (- si wordsize))
+  (emit "   movl %ebp, ~s(%esp) # mem to stack" (- si (* 2 wordsize)))
+  (emit "   call heap_alloc"))
+
+(define emit-alloc-heap
+  (match-lambda*
+    [(list si (? boolean? align?))
+     ; %eax store the size,
+     (when align?
+       (emit "   addl $~s, %eax # heap align calculation" (sub1 heap-align))
+       (emit "   andl $~s, %eax" (- heap-align)))
+     (emit-alloc-heap1 si)]
+    [(list si (? number? size))
+     ; size is the bytes to allocate
+     (let ([size (bitwise-and (+ size (sub1 heap-align))
+                              (- heap-align))])
+       (emit "   movl $~s, %eax" si)
+       (emit-alloc-heap1 si))]))
+
 #|(load "tests-1.3-req1.scm")
 (load "tests-1.4-req.scm")
 (load "tests-1.5-req1.scm")
@@ -629,5 +652,5 @@
 ; (load "tests-1.8-opt.scm")
 ; (load "tests-sexp.scm")
 ;(load "tests-print.scm")
-(load "tests-proc.scm")
-;(load "tests-vector.scm")
+;(load "tests-proc.scm")
+(load "tests-vector.scm")
