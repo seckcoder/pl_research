@@ -21,6 +21,10 @@ int to_fixnum(ptr x) {
   return ((int)x) >> fxshift;
 }
 
+int to_fixnum_rep(int v) {
+  return (v << fxshift);
+}
+
 char to_char(ptr x) {
   return (char)((int)x >> charshift);
 }
@@ -73,10 +77,6 @@ int is_heap_ptr(ptr x) {
   return is_pair(x) | is_closure(x) | is_vector(x) | is_string(x);
 }
 
-void set_heap_ptr_tag(ptr *p, int tag) {
-  (*p) += tag;
-}
-
 void print_null() {
   printf("()");
 }
@@ -127,7 +127,7 @@ void print_ptr_rec(ptr x) {
     print_pair(x);
     printf(")");
   } else if (is_vector(x)) {
-    print_vector(to_vector((ptr)x));
+    print_vector(to_vector(x));
   }  else {
     printf("#<unknown 0x%08x>", x);
   }
@@ -138,15 +138,15 @@ void print_ptr(ptr x) {
   printf("\n");
 }
 
-
 int get_word(char *p) {
   int v;
   memcpy(&v, p, wordsize);
   return v;
 }
 
-void set_word(char *p, int v) {
-  memcpy(p, (char*)v, wordsize);
+// set the first word pointed by p with value pointed by vp
+void set_word(void* p, void* vp) {
+  memcpy(p, vp, wordsize);
 }
 
 // we use double word to store a forward_ptr
@@ -164,8 +164,8 @@ char* get_forward_ptr(ptr x) {
 
 void mark_forward(char *p, char *new_p) {
   unsigned int tag = gc_forward_tag;
-  set_word(p, tag);
-  set_word(p + wordsize, (int)new_p);
+  set_word(p, &tag);
+  set_word(p + wordsize, &new_p);
 }
 
 vector to_vector(ptr p) {
@@ -190,15 +190,16 @@ int vector_ref(vector v, int i) {
 // DFS search
 void gc_forward_rec(char* p, char* pp, memory* mem) {
   if (is_forward_ptr((ptr)p)) {
-    set_word(pp, (int)(get_forward_ptr((ptr)p)));
+    char* forw_ptr = get_forward_ptr((ptr)p);
+    set_word(pp, &forw_ptr);
   } else if (is_heap_ptr((ptr)p)) {
     if (is_vector((ptr)p)) {
       vector vec = to_vector((ptr)p);
       int vec_size = vector_length(vec) * wordsize + wordsize;
       char* new_p = mem->heap;
       mem->heap += vec_size;
-      memcpy(p, new_p, vec_size);  // copy content
-      mark_forward(p, new_p);
+      memcpy(new_p, (char*)vec, vec_size); // copy content
+      mark_forward((char*)vec, new_p);
       int i = 0;
       for(i = 0; i < vec_size; i++) {
         char* ppi = new_p + (i+1)*wordsize;
@@ -223,13 +224,14 @@ char* gc_forward(char* p, memory* mem) {
     return get_forward_ptr((ptr)p); // get ptr
   } else if (is_vector((ptr)p)) {
     vector vec = to_vector((ptr)p);
-    int vec_size = (vector_length(vec) + 1) * wordsize;
+    unsigned int vec_size = align_heap((vector_length(vec) + 1) * wordsize);
+    /*printf("vec size:%d\n", vec_size);*/
     char* new_p = mem->heap;
     mem->heap += vec_size;
-    memcpy(p, new_p, vec_size); // copy content of p to new space
-    set_heap_ptr_tag((ptr*)&new_p, vec_tag); // add tag for new_p
-    mark_forward(p, new_p); // p->new_p
-    return new_p;
+    memcpy(new_p, (char*)vec, vec_size); // copy content of p to new space
+    /*printf("%d\n", get_word(new_p));*/
+    mark_forward((char*)vec, new_p); // vec->new_p
+    return add_vectag(new_p);
   } else {
     print_ptr((ptr)p);
     exit(20);
@@ -252,18 +254,19 @@ void reset_memory(char* start, char* end) {
 // stop and copy garbage collection.
 // BFS
 void gc(memory *mem, char* stack) {
-  printf("gc\n");
+  /*printf("gc: %d\n", (mem->stack_top - stack));*/
   reset_memory(mem->heap_base1, mem->heap_top1);
-  mem->heap = mem->heap_base1;
+  mem->heap = mem->heap_base1; // set new heap pointer
 
   // stack roots
   while (stack < mem->stack_top)  {
     char* pp = stack;
     char* p = (char*)get_word(pp);
     char* new_p = gc_forward(p, mem);
+    /*print_ptr((ptr)new_p);*/
     assert(new_p != NULL);
     if (p != new_p) {
-      set_word(pp, (int)new_p);
+      set_word(pp, &new_p);
     }
     stack += wordsize;
   }
@@ -284,28 +287,34 @@ void gc(memory *mem, char* stack) {
         char* new_vi = gc_forward(vi, mem);
         assert(new_vi!= NULL);
         if (new_vi != vi) {
-          set_word(pvi, (int)new_vi);
+          set_word(pvi, &new_vi);
         }
       }
       scan += (vec_len+1) * wordsize; // to next element
-    } // other data types...
-
+    } else {
+      scan += wordsize;  // other value
+    }
     alloc = mem->heap; // update alloc since mem->heap is changin after gc_forward
   }
   swap_mem_heap(mem); // swap old space and new space
+  /*reset_memory(mem->heap_base1, mem->heap_top1);*/
   // mem->heap now points to the address of the first free position in heap
 }
 
-char* heap_alloc(memory *mem, char* stack, int size) {
-  /*printf("heap_alloc\n");*/
+unsigned int align_heap(unsigned int size) {
+  return (size + heap_align - 1) & -heap_align;
+}
+
+char* heap_alloc(memory *mem, char* stack, unsigned int size) {
   // [heap_base, heap_top)
+  /*printf("%u %u %u\n", (ptr)(mem->heap),size, (ptr)mem->heap_top);*/
   if (mem->heap + size >= mem->heap_top) {
     gc(mem, stack);
   }
   assert((mem->heap + size) < mem->heap_top);
+  char* heap_tmp = mem->heap;
   mem->heap += size;
-  return mem->heap;
-  // allocate at mem->heap
+  return heap_tmp;
 }
 
 
@@ -334,14 +343,74 @@ void deallocate_protected_space(char* p, int size) {
 }
 
 
+// gc debugging code
+
+
+static int heap_size = 0;
+
+
+char* next_stack_pos(char* stack) {
+  return stack - wordsize;
+}
+
+char* next_heap_pos(char* heap) {
+  return heap + wordsize;
+}
+
+char* add_vectag(char* p) {
+  return (p + vec_tag);
+}
+
+void set_word_value(void* p, int v) {
+  set_word(p, &v);
+}
+
+char* vector_alloc(memory* mem, char* stack, unsigned int len, int *v) {
+  char* heap = heap_alloc(mem, stack, align_heap((len+1)*wordsize));
+  char* pv = heap;
+  set_word_value(heap, to_fixnum_rep(len));
+  heap = next_heap_pos(heap);
+  int i = 0;
+  for(i = 0; i < len; i++) {
+    /*set_word(heap, &v[i]);*/
+    set_word_value(heap, to_fixnum_rep(v[i]));
+    heap = next_heap_pos(heap);
+  }
+  return add_vectag(pv);
+}
+
+void debug_main(memory* mem) {
+  char* stack = mem->stack_top; // stack on top
+  int v1[2] = {1, 2};
+  char* pv1 = vector_alloc(mem, stack, 2, v1);
+  int v2[1] = {3};
+  vector_alloc(mem, stack, 1, v2);
+  stack = next_stack_pos(stack);
+  set_word(stack, &pv1); // stack point to pv1;
+  int v3[1] = {4};
+  char* pv3 = vector_alloc(mem, stack, 1, v3); // allocate 8 bytes space, gc started.
+  pv1 = (char*)get_word(stack);
+  print_ptr((ptr)pv1);
+  /*print_ptr((ptr)pv2);*/
+  print_ptr((ptr)pv3);
+  printf("%u %u\n", (ptr)mem->heap, (ptr)mem->heap_base);
+}
+
 int scheme_entry();
 int main(int argc, char** argv) {
-  int stack_size = 16 * 4096; //  16K byte
-  int heap_size = (4 * 16 * 4096);
+  int stack_size = 16 * 4096;
+  if (debug_gc | test_gc) {
+    heap_size = 64;
+  } else {
+    heap_size = (4 * 16 * 4096);
+  }
   int global_size = 16 * 4096;
   char* stack_base = allocate_protected_space(stack_size);
   char* heap_base = allocate_protected_space(heap_size);
   char* global_base = allocate_protected_space(global_size);
+  memset(stack_base, 0, stack_size);
+  memset(heap_base, 0, heap_size);
+  memset(global_base, 0, global_size);
 
   memory mem;
   mem.heap = heap_base;
@@ -354,11 +423,27 @@ int main(int argc, char** argv) {
   mem.stack_top = mem.stack_base + stack_size;
   mem.global_base = global_base;
   mem.global_top = mem.global_base + global_size;
-  reset_memory(mem.heap_base1, mem.heap_top1);
+
+
   context ctx;
-  print_ptr(scheme_entry(&ctx, mem.stack_top,
-        &mem));
+  if (debug_gc) {
+    debug_main(&mem);
+  } else {
+    print_ptr(scheme_entry(&ctx, mem.stack_top,
+          &mem));
+  }
   deallocate_protected_space(stack_base, stack_size);
   deallocate_protected_space(heap_base, heap_size);
+  deallocate_protected_space(global_base, global_size);
   return 0;
 }
+
+
+/*int main(int argc, const char *argv[])
+{
+  int a = 2;
+  int b = 3;
+  set_word((char*)&a, (char*)&b);
+  printf("%d %d\n", a, b);
+  return 0;
+}*/

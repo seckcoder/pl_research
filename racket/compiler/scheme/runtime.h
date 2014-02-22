@@ -30,6 +30,9 @@
 #define obj_shift 3  // object shift
 #define heap_align (1 << obj_shift) // double word
 
+#define debug_gc 0
+#define test_gc 1
+
 
 typedef unsigned int ptr;
 
@@ -77,3 +80,5 @@ vector to_vector(ptr p) ;
 char* vector_pi(vector v, int i);
 int vector_ref(vector v, int i);
 int get_word(char *p);
+unsigned int align_heap(unsigned int size) ;
+char* add_vectag(char* p) ;

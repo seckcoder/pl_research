@@ -688,5 +688,5 @@
 ; (load "tests-sexp.scm")
 ;(load "tests-print.scm")
 ;(load "tests-proc.scm")
-(load "tests-vector.scm")
-;(load "tests-gc.scm")
+;(load "tests-vector.scm")
+(load "tests-gc.scm")
