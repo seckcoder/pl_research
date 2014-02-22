@@ -1,6 +1,6 @@
 (load "tests-driver.scm")
-;(load "tests-1.1-req.scm")
-;(load "tests-1.2-req.scm")
+#|(load "tests-1.1-req.scm")
+(load "tests-1.2-req.scm")|#
 
 (require racket/match
          (prefix-in env: "env.rkt")
@@ -73,7 +73,7 @@
   (emit "   call L_scheme_entry")
   (emit-restore-regs)
   (emit "   ret # return from scheme_entry")
-  (emit-global-proc*)
+  ;(emit-global-proc*)
   )
 (define (emit-preserve-regs)
   (define (si-of-i i)
@@ -202,7 +202,7 @@
         (emit-exp1 a)
         (emit-remove-fxtag 'eax) ; remove fxtag so that it can be used in imull
         (emit "  movl %eax, ~s(%esp)" si)
-        ((emit-exp (- si wordsize) env) b)
+        ((emit-exp (- si wordsize) env #f) b)
         (emit-remove-fxtag 'eax)
         (emit "  imull ~s(%esp), %eax" si) ; multiply two number
         (emit-add-fxtag 'eax))
@@ -286,7 +286,7 @@
   (define (emit-make-vec n)
     ((emit-exp si env #f) n)
     (emit-remove-fxtag 'eax) ; %eax store length
-    (emit "   movl %eax, ~s(%esp)" si) ; store length to stack
+    (emit "   movl %eax, ~s(%esp) #store length to stack" si)
     (emit-calc-vector-size)
     (emit-alloc-heap (- si wordsize) #f) ; vec length on stack
     (emit-stack->heap si 0)
@@ -315,9 +315,10 @@
     ; why we shouldn't evaluate one value and move it to heap?
     ; Since when evaluate the value, it may change ebp
     (emit "# emit-vec-from-values")
-    (emit-exps-push-all si env vs)
-    (emit-alloc-heap si (* (add1 (length vs)) wordsize))
-    (let ([len (length vs)])
+    (let* ([len (length vs)]
+           [new-si (emit-exps-push-all si env vs)])
+      (emit-alloc-heap new-si
+                       (* (add1 len) wordsize))
       (emit "   movl $~s, (%eax) # move length to vector" len)
       (let loop ([i 0])
         (unless (>= i len)
@@ -492,7 +493,7 @@
     es))
 
 (define (emit-remove-fxtag reg)
-  (emit "   sar $~s, %~a" fxshift reg))
+  (emit "   sar $~s, %~a # remove fx tag" fxshift reg))
 (define (emit-add-fxtag reg)
   ; sign extension
   (emit "   sal $~s, %~a # add fxtag" fxshift reg))
@@ -615,17 +616,23 @@
 
 (define (emit-calc-vector-size)
   ; length in %eax
-  (emit "   addl $1, %eax") ; length stored in vector
-  (emit "   immul $~s, %eax" wordsize))
+  (emit "   addl $1, %eax # calculate vector size with %eax store length")
+  (emit "   imull $~s, %eax" wordsize))
+
+(define (emit-foreign-call si funcname)
+  (emit "   addl $~s, %esp" (+ si wordsize))
+  (emit "   call ~a" funcname)
+  (emit "   subl $~s, %esp" (+ si wordsize)))
 
 (define (emit-alloc-heap1 si)
   ; heap-aligned size in eax
   ; heap_alloc(mem, stack, size)
   (emit "   movl %eax, ~s(%esp) # size to stack" si)
-  (emit "   leal ~s(%esp), ~s(%esp) # esp to stack" (+ si wordsize)
-        (- si wordsize))
+  (emit "   leal ~s(%esp), %ecx # stack base pointer" (+ si wordsize))
+  (emit "   movl %ecx, ~s(%esp)" (- si wordsize))
   (emit "   movl %ebp, ~s(%esp) # mem to stack" (- si (* 2 wordsize)))
-  (emit "   call heap_alloc"))
+  (emit-foreign-call (- si (* 3 wordsize))
+                     'heap_alloc))
 
 (define emit-alloc-heap
   (match-lambda*
@@ -637,9 +644,9 @@
      (emit-alloc-heap1 si)]
     [(list si (? number? size))
      ; size is the bytes to allocate
-     (let ([size (bitwise-and (+ size (sub1 heap-align))
-                              (- heap-align))])
-       (emit "   movl $~s, %eax" si)
+     (let ([aligned-size (bitwise-and (+ size (sub1 heap-align))
+                                      (- heap-align))])
+       (emit "   movl $~s, %eax" aligned-size)
        (emit-alloc-heap1 si))]))
 
 #|(load "tests-1.3-req1.scm")

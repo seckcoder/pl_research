@@ -174,7 +174,8 @@ void gc_forward_rec(char* p, char* pp, memory* mem) {
       mem->heap += vec_size;
       memcpy(p, new_p, vec_size);  // copy content
       mark_forward(p, new_p);
-      for(int i = 0; i < vec_size; i++) {
+      int i = 0;
+      for(i = 0; i < vec_size; i++) {
         char* ppi = new_p + (i+1)*wordsize;
         char* pi = (char*)get_word(ppi);
         gc_forward_rec(pi, ppi, mem);
@@ -242,7 +243,6 @@ void gc(memory *mem, char* stack) {
   }
 
   // global roots
-  mem->global 
 
   char* scan = mem->heap_base1;
   char* alloc = mem->heap;
@@ -250,7 +250,8 @@ void gc(memory *mem, char* stack) {
     char* p = (char*)get_word(scan);
     if (is_vector((ptr)p)) {
       int vec_len = vector_length(p);
-      for(int i = 0; i < vec_len; i+=1) {
+      int i = 0;
+      for(i = 0; i < vec_len; i+=1) {
         char* pvi = vector_ref(p, i); // pointer to ith element of vector
         char* vi = (char*)get_word(pvi); // get ith element
         char* new_vi = gc_forward(vi, mem);
@@ -269,7 +270,9 @@ void gc(memory *mem, char* stack) {
 }
 
 char* heap_alloc(memory *mem, char* stack, int size) {
-  if (mem->heap + size > mem->heap_top) {
+  /*printf("heap_alloc\n");*/
+  // [heap_base, heap_top)
+  if (mem->heap + size >= mem->heap_top) {
     gc(mem, stack);
   }
   assert((mem->heap + size) <= mem->heap_top);
@@ -308,14 +311,25 @@ int scheme_entry();
 int main(int argc, char** argv) {
   int stack_size = 16 * 4096; // 16K byte
   int heap_size = (4 * 16 * 4096);
+  int global_size = 16 * 4096;
   char* stack_base = allocate_protected_space(stack_size);
-  char* stack_top = stack_base + stack_size;
   char* heap_base = allocate_protected_space(heap_size);
-  /*char* heap_top = heap_base + heap_size;*/
+  char* global_base = allocate_protected_space(global_size);
 
-  /*printf("heap base:%u\n", (unsigned int)heap_base);*/
+  memory mem;
+  mem.heap = heap_base;
+  mem.global = global_base;
+  mem.heap_base = heap_base;
+  mem.heap_top = mem.heap_base + heap_size/2;
+  mem.heap_base1 = mem.heap_top;
+  mem.heap_top1 = mem.heap_base + heap_size;
+  mem.stack_base = stack_base;
+  mem.stack_top = mem.stack_base + stack_size;
+  mem.global_base = global_base;
+  mem.global_top = mem.global_base + global_size;
   context ctx;
-  print_ptr(scheme_entry(&ctx, stack_top, heap_base));
+  print_ptr(scheme_entry(&ctx, mem.stack_top,
+        &mem));
   deallocate_protected_space(stack_base, stack_size);
   deallocate_protected_space(heap_base, heap_size);
   return 0;

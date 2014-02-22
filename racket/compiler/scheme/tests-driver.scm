@@ -12,7 +12,7 @@
 
 (define (build)
   (unless (system (format
-                    "gcc -Wall -o stst ~a stst.s"
+                    "gcc -Wall -g -o stst ~a stst.s"
                                  (runtime-file)))
                                  ;(lib-file)))
     (error 'make "could not build target")))
