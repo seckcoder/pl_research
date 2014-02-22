@@ -227,6 +227,7 @@ void reset_memory(char* start, char* end) {
 // stop and copy garbage collection.
 // BFS
 void gc(memory *mem, char* stack) {
+  printf("gc\n");
   reset_memory(mem->heap_base1, mem->heap_top1);
   mem->heap = mem->heap_base1;
 

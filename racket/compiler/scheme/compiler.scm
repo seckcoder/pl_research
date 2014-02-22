@@ -240,6 +240,11 @@
            (emit "   movl %eax, %ecx")
            (emit "   movl ~s(%esp), %eax" si)
            (emit "   subl %ecx, %eax")]
+        [quotient
+          (emit-divide (emit-exps-push-all si env (list a b)))]
+        [remainder
+          (emit-divide (emit-exps-push-all si env (list a b)))
+          (emit "   movl %edx, %eax")]
         [fx- (emit-exp1 `(- ,a ,b))]
         [= (emit-cmp '=)]
         [fx= (emit-exp1 `(= ,a ,b))]
@@ -618,6 +623,21 @@
   (emit "# emit-stack-move-range end")
   )
 
+(define (emit-divide si)
+  ; value stores on stack
+  (emit "   movl ~s(%esp), %edx # dividend to [edx,eax]"
+        (+ si (* 2 wordsize)))
+  (emit-remove-fxtag 'edx)
+  (emit "   movl %edx, %eax")
+  (emit "   sarl $~s, %edx # set edx as 0 or all 1" (sub1 wordsize))
+  (emit "   movl ~s(%esp), %ecx #divisor" (+ si wordsize))
+  (emit-remove-fxtag 'ecx)
+  (emit "   idivl %ecx")
+  (emit-add-fxtag 'eax)
+  (emit-add-fxtag 'edx)
+  ;(emit "   movl ~s(%esp), %eax" (+ si (* 1 wordsize)))
+  )
+
 (define (emit-calc-vector-size)
   ; length in %eax
   (emit "   addl $1, %eax # calculate vector size with %eax store length")
@@ -655,13 +675,14 @@
 
 #|(load "tests-1.3-req1.scm")
 (load "tests-1.4-req.scm")
-(load "tests-1.5-req1.scm")
 (load "tests-1.6-req.scm")|#
-#|(load "tests-1.6-opt.scm")
-(load "tests-1.5-req.scm")|#
+;(load "tests-1.6-opt.scm")
+;(load "tests-1.5-req.scm")
+(load "tests-1.5-opt.scm")
 
 ; (load "tests-1.8-opt.scm")
 ; (load "tests-sexp.scm")
 ;(load "tests-print.scm")
 ;(load "tests-proc.scm")
-(load "tests-vector.scm")
+;(load "tests-vector.scm")
+;(load "tests-gc.scm")

@@ -101,6 +101,8 @@
               + fx+
               - fx-
               * fx*
+              quotient
+              remainder
               = fx=
               < fx<
               <= fx<=

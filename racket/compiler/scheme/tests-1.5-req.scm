@@ -83,6 +83,7 @@
   [(fx* 2 (fx* 3 (fx* 4 (fx* 5 (fx* 6 7))))) => "5040\n"]
 )
 
+
 #|(add-tests-with-string-output "fxlogand and fxlogor"
   [(fxlogor 3 16) => "19\n"]
   [(fxlogor 3 5)  => "7\n"]
