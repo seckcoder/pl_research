@@ -180,22 +180,16 @@
          (emit "   sete %al")
          (emit-eax-0/1->bool)]
         ['car
-         (emit "   movl -1(%eax), %eax")]
+         ; It's -1, because tag of pair is 0x1, so the tagger pointer
+         ; is just one byte bigger
+         (emit "   movl -1(%eax), %eax # car of pair. Think about -1!")]
         ['cdr
-         (emit "   movl ~s(%eax), %eax" (sub1 wordsize))]
+         (emit "   movl ~s(%eax), %eax # cdr of pair. Think about (sub1 wordsize)" (sub1 wordsize))]
         ['pair?
          (emit "   andb $~s, %al" pairmask)
          (emit "   cmpb $~s, %al" pairtag)
          (emit "   sete %al")
          (emit-eax-0/1->bool)]
-        ['print
-         (emit "   addl $~s, %esp" (- si wordsize))
-         (emit "   movl %ebp, ~s(%esp)" wordsize) ; preserve %ebp on stack
-         (emit "   movl %eax, (%esp)") ; move eax value to stack
-         (emit "   call print_ptr")
-         (emit "   movl ~s(%esp), %ebp" wordsize) ; restore %ebp
-         (emit "   subl $~s, %esp" (- si wordsize))
-         (emit "   movl $~s, %eax" (immediate-rep 0))]
         ['length
          (emit-remove-vectag 'eax)
          (emit "   movl (%eax), %eax # move vector length to eax")]
@@ -256,16 +250,7 @@
         [fx> (emit-exp1 `(> ,a ,b))]
         [>= (emit-cmp '>=)]
         [fx>= (emit-exp1 `(>= ,a ,b))]
-        [cons (emit-biv)
-              (emit "   movl %eax, ~s(%ebp)" wordsize) ; copy b to heap
-              (emit "   movl ~s(%esp), %ecx" si) ; copy a to temporary
-              (emit "   movl %ecx, (%ebp)") ; copy a to heap
-              (emit "   movl %ebp, %eax")
-              (emit-add-pairtag 'eax)
-              ; assert 2*wordsize = n * heap-align
-              (emit "   addl $~s, %ebp" (* 2 wordsize))
-              ; baseptr + 2 * wordsize is 8-byte aligned.
-              ]
+        [cons (emit-cons a b)]
         ))
     (define (report-not-found)
       (error 'emit-biop "~a is not a binary operator" op))
@@ -339,19 +324,24 @@
       )
     (emit "# emit-vec-from-values end")
     )
+  (define (emit-cons a d)
+    (let ([new-si (emit-exps-push-all si env (list a d))])
+      (emit-alloc-heap new-si
+                       (* 2 wordsize))
+      (emit-stack->heap si 0) ; move a to heap
+      (emit-stack->heap (- si wordsize) wordsize) ; move d to heap
+      (emit-add-pairtag 'eax)))
   (define (emit-closure f rv)
     (emit "# emit-closure")
-    ;(print rv)(newline)
-    ;(emit-exp1 rv)
     ((emit-exp si env #f) rv)
-    (emit "   leal ~s, %ecx" f)
-    (emit "   movl %ecx, (%ebp)") ; move label address to heap
-    (emit "   movl %eax, ~s(%ebp)" wordsize) ; move vector env to heap
-    (emit "   movl %ebp, %eax") ; return as pointer
-    (emit-add-cljtag 'eax)
-    (emit "   addl $~s, %ebp" (* 2 wordsize))
-    (emit "# emit-closure end")
-    ) ; step ebp
+    (let ([new-si (emit-eax->stack si)])
+      (emit-alloc-heap new-si (* 2 wordsize)) ; store label and fvs env
+      (emit "   leal ~s, %ecx # get address of closure label" f)
+      ;(emit-add-fxtag 'ecx) ; we represent address as fxnum
+      (emit "   movl %ecx, (%eax) # move label address to heap")
+      (emit-stack->heap si wordsize) ; move fvs env to heap
+      (emit-add-cljtag 'eax)
+      (emit "# emit-closure end")))
   (define (emit-app rator rands)
     (emit "# emit-app")
     ;(printf "emit-app: is tail call? ~a" tail?)
@@ -534,9 +524,10 @@
   (emit "   sal $~s, %al" boolshift)  ; transform the result to bool
   (emit "   or $~s, %al" bool-f))
 
-; move eax to stack
+; move eax to stack; return next si
 (define (emit-eax->stack si)
-  (emit "   movl %eax, ~s(%esp) # save eax value to stack" si))
+  (emit "   movl %eax, ~s(%esp) # save eax value to stack" si)
+  (- si wordsize))
 
 ; return si
 (define (emit-exps-leave-last si env exps)
@@ -554,16 +545,15 @@
           (emit-exps-leave-last si env rest)
           si))]))
 
-(define (emit-exps-push-all si env exps)
+(define (emit-exps-push-all si env exps [tail? #f])
   ; emit mutli exps, all pushed to stack
   (emit "# emit-exps-push-all")
   (let ([new-si
           (foldl
             (match-lambda*
               [(list exp si)
-               ((emit-exp si env #f) exp)
-               (emit-eax->stack si)
-               (- si wordsize)])
+               ((emit-exp si env tail?) exp)
+               (emit-eax->stack si)])
             si
             exps)])
     (emit "# emit-exps-push-all end")
@@ -677,16 +667,15 @@
        (emit "   movl $~s, %eax" aligned-size)
        (emit-alloc-heap1 si))]))
 
-#|(load "tests-1.3-req1.scm")
+(load "tests-1.3-req1.scm")
 (load "tests-1.4-req.scm")
-(load "tests-1.6-req.scm")|#
-;(load "tests-1.6-opt.scm")
-;(load "tests-1.5-req.scm")
-;(load "tests-1.5-opt.scm")
+(load "tests-1.6-req.scm")
+(load "tests-1.6-opt.scm")
+(load "tests-1.5-req.scm")
+(load "tests-1.5-opt.scm")
 
-; (load "tests-1.8-opt.scm")
+(load "tests-1.8-opt.scm") ; test pair
 ; (load "tests-sexp.scm")
 ;(load "tests-print.scm")
 ;(load "tests-proc.scm")
 ;(load "tests-vector.scm")
-(load "tests-gc.scm")

@@ -65,6 +65,10 @@ int is_closure(ptr x) {
   return (x & cljmask) == clj_tag;
 }
 
+closure* to_closure(ptr x) {
+  return (closure*)(x - clj_tag);
+}
+
 int is_vector(ptr x) {
   return (x & vecmask) == vec_tag;
 }
@@ -74,7 +78,7 @@ int is_string(ptr x) {
 }
 
 int is_heap_ptr(ptr x) {
-  return is_pair(x) | is_closure(x) | is_vector(x) | is_string(x);
+  return is_pair(x) || is_closure(x) || is_vector(x) || is_string(x);
 }
 
 void print_null() {
@@ -96,7 +100,7 @@ void print_pair(ptr x) {
   }
 }
 
-void print_vector(vector x) {
+void print_vector(int* x) {
   if (is_point_to_forward_ptr((char*)x)) {
     printf("-->%u", (ptr)x);
   } else {
@@ -177,21 +181,21 @@ void mark_forward(char *new_p, char *p) {
   set_word(p + wordsize, &new_p);
 }
 
-vector to_vector(ptr p) {
-  return (vector)(p - vec_tag);
+int* to_vector(ptr p) {
+  return (int*)(p - vec_tag);
 }
 
 // get length of the vector stored in p
-int vector_length(vector v) {
+int vector_length(int* v) {
   return to_fixnum(v[0]);
 }
 
 // get ith pointer of vector
-char* vector_pi(vector v, int i) {
+char* vector_pi(int* v, int i) {
   return (char*)&v[i+1];
 }
 // get ith value of vector
-int vector_ref(vector v, int i) {
+int vector_ref(int* v, int i) {
   return v[i+1];
 }
 
@@ -199,7 +203,7 @@ int vector_rep_ref(ptr vp, int i) {
   return vector_ref(to_vector(vp), i);
 }
 
-void vector_set(vector vec, int i, int val) {
+void vector_set(int* vec, int i, int val) {
   set_word_value(vector_pi(vec, i), val);
 }
 
@@ -207,8 +211,56 @@ void vector_rep_set(ptr vrep, int i, int val) {
   vector_set(to_vector(vrep), i, val);
 }
 
+void set_car(pair* pair_ptr, int val) {
+  pair_ptr->car = (ptr)val;
+}
+void set_cdr(pair* pair_ptr, int val) {
+  pair_ptr->cdr = (ptr)val;
+}
+
+void set_car_from_rep(ptr pair_rep, int val) {
+  set_car(to_pair(pair_rep), val);
+}
+
+void set_cdr_from_rep(ptr pair_rep, int val) {
+  set_cdr(to_pair(pair_rep), val);
+}
+
+char* add_heapptr_tag(char* p, unsigned int tag) {
+  return (p + tag);
+}
+
 char* add_vectag(char* p) {
   return (p + vec_tag);
+}
+
+char* add_cljtag(char* p) {
+  return (p + clj_tag);
+}
+
+char* add_pairtag(char* p) {
+  return (p + pair_tag);
+}
+
+char* copy_to_newspace(memory* mem, char* pv, unsigned int size, unsigned int tag) {
+  char* new_p = mem->heap;
+  mem->heap += size;
+  memcpy(new_p, pv, size);
+  new_p = add_heapptr_tag(new_p, tag);
+  mark_forward(new_p, pv);
+  return new_p;
+}
+
+char* copy_as_vector(memory* mem, char* pv, unsigned int size) {
+  return copy_to_newspace(mem, pv, size, vec_tag);
+}
+
+char* copy_as_pair(memory* mem, char* pv, unsigned int size) {
+  return copy_to_newspace(mem, pv, size, pair_tag);
+}
+
+char* copy_as_clojure(memory* mem, char* pv, unsigned int size) {
+  return copy_to_newspace(mem, pv, size, clj_tag);
 }
 
 // copy/forward p to the newspace
@@ -223,22 +275,47 @@ char* gc_forward(char* p, memory* mem,
   } else if (is_vector((ptr)p)) {
     // is_point_to_forward_ptr should be included in is_vector 
     // test!!! Think about it!
-    vector vec = to_vector((ptr)p);
+    int* vec = to_vector((ptr)p);
     if (is_point_to_forward_ptr((char*)vec)) {
       *is_forward_ptr = 1;
       return get_forward_ptr((char*)vec);
     } else {
       unsigned int vec_size = align_heap((vector_length(vec) + 1) * wordsize);
-      char* new_p = mem->heap;
-      mem->heap += vec_size;
-      memcpy(new_p, (char*)vec, vec_size); // copy content of p to new space
-      new_p = add_vectag(new_p);  // add tag
-      mark_forward(new_p, (char*)vec); // vec->new_p
-      return new_p;
+      return copy_as_vector(mem, (char*)vec, vec_size);
     } 
+  } else if (is_pair((ptr)p)) {
+    pair* pair_ptr = to_pair((ptr)p);
+    if (is_point_to_forward_ptr((char*)pair_ptr)) {
+      *is_forward_ptr = 1;
+      return get_forward_ptr((char*)pair_ptr);
+    } else {
+      return copy_as_pair(mem, (char*)pair_ptr, 2 * wordsize);
+    }
+  } else if (is_closure((ptr)p)) {
+    closure* clj_ptr = to_closure((ptr)p);
+    if (is_point_to_forward_ptr((char*)clj_ptr)) {
+      *is_forward_ptr = 1;
+      return get_forward_ptr((char*)clj_ptr);
+    } else {
+      return copy_as_clojure(mem, (char*)clj_ptr, 2 * wordsize);
+    }
   } else {
     print_ptr((ptr)p);
     exit(20);
+  }
+}
+
+// forward the pointer and update it accordingly.
+// pp is the address of p
+void forward_and_update(char* p, char* pp, memory* mem, queue* pq) {
+  int is_forward_ptr = 0;
+  char* new_p = gc_forward(p, mem, &is_forward_ptr);
+  assert(new_p != NULL);
+  if (new_p != p) {
+    set_word(pp, &new_p);
+    if (!is_forward_ptr) {
+      enqueue(pq, &new_p);
+    }
   }
 }
 
@@ -257,15 +334,6 @@ void reset_memory(char* start, char* end) {
   memset(start, 0, end-start);
 }
 
-// a simple implementation of circular queue
-typedef struct {
-  void* front;
-  void* tail;
-  void* base;
-  void* top;
-  unsigned int usize; // number of bytes for each cell in queue
-  unsigned int maxsize; // max number of bytes the queue can store
-} queue;
 
 // pmem: base of the memory that queue lies on
 // usize: the size of cell in queue
@@ -327,20 +395,19 @@ void queue_front(queue* pq, void* ret) {
   memcpy(ret, pq->front, pq->usize);
 }
 
+unsigned int queue_size(queue* pq) {
+  if (pq->tail >= pq->front) {
+    return (pq->tail - pq->front) / pq->usize;
+  } else {
+    return ((pq->top - pq->base) - (pq->front - pq->tail)) / pq->usize;
+  }
+}
+
 
 void traverse_roots(char* base, char* top, queue* pq, memory* pmem) {
   while (base < top) {
     char* p = (char*)get_word(base); // p is pointer lies on stack but points to the heap 
-    int is_forward_ptr = 0;
-    char* new_p = gc_forward(p, pmem, &is_forward_ptr);
-    assert(new_p != NULL);
-    if (p != new_p) {
-      // p is forwarded to another mem place
-      set_word_value(base, (int)new_p); // set content pointed by base as value of new_p
-      if (!is_forward_ptr) {
-        enqueue(pq, &new_p); // add newptr to queue
-      }
-    }
+    forward_and_update(p, base, pmem, pq);
     base += wordsize; // step base pointer
   }
 }
@@ -363,28 +430,30 @@ void gc(memory *mem, char* stack) {
   // traverse global
   traverse_roots(mem->global_base, mem->global, &ptrq, mem);
 
+  /*printf("queue size:%u\n", queue_size(&ptrq));*/
   while (!is_queue_empty(&ptrq)) {
     char* p;
     queue_front(&ptrq, &p);
     dequeue(&ptrq);
     if (is_vector((ptr)p)) {
-      vector vec = to_vector((ptr)p);
+      int* vec = to_vector((ptr)p);
       int vec_len = vector_length(vec);
       int i = 0;
       for(i = 0; i < vec_len; i+=1) {
         char* pvi = vector_pi(vec, i); // pointer to ith element of vector
         char* vi = (char*)get_word(pvi); // get ith element
-        int is_forward_ptr = 0;
-        char* new_vi = gc_forward(vi, mem, &is_forward_ptr);
-        /*printf("is_forward_ptr:%d\n", is_forward_ptr);*/
-        assert(new_vi != NULL);
-        if (new_vi != vi) {
-          set_word(pvi, &new_vi);
-          if (!is_forward_ptr) {
-            enqueue(&ptrq, &new_vi);
-          }
-        }
+        forward_and_update(vi, pvi, mem, &ptrq);
       }
+    } else if (is_pair((ptr)p)) {
+      pair* pair_ptr = to_pair((ptr)p);
+      forward_and_update((char*)(pair_ptr->car), (char*)(&(pair_ptr->car)),
+          mem, &ptrq);
+      forward_and_update((char*)pair_ptr->cdr, (char*)(&(pair_ptr->cdr)),
+          mem, &ptrq);
+    } else if (is_closure((ptr)p)) {
+      closure* pclj = to_closure((ptr)p);
+      // for clojure, there's only a pointer(env)
+      forward_and_update((char*)pclj->env,(char*)(&(pclj->env)), mem, &ptrq);
     } else {
       // just ignore
     }

@@ -70,24 +70,47 @@ typedef struct {
   ptr cdr;
 } pair;
 
-typedef int* vector;
+typedef struct {
+  ptr f_addr;
+  ptr env;  // fvs env
+} closure;
+
+// a simple implementation of circular queue
+typedef struct {
+  void* front;
+  void* tail;
+  void* base;
+  void* top;
+  unsigned int usize; // number of bytes for each cell in queue
+  unsigned int maxsize; // max number of bytes the queue can store
+} queue;
+
+//typedef int* vector;
 
 // ptr points to heap
 int is_heap_ptr(ptr p);
-int is_vector(ptr p);
-void set_heap_ptr_tag(ptr *p, int tag);
   
 int to_fixnum(ptr x) ;
 int to_fixnum_rep(int v);
 void print_ptr(ptr x);
+int is_vector(ptr p);
 void print_ptr_rec(ptr x) ;
-int vector_length(vector v);
-vector to_vector(ptr p) ;
-char* vector_pi(vector v, int i);
-int vector_ref(vector v, int i);
+int vector_length(int* v);
+int* to_vector(ptr p) ;
+pair* to_pair(ptr p);
+closure* to_closure(ptr p);
+int is_closure(ptr x) ;
+int is_pair(ptr x);
+int is_fixnum(ptr x);
+char* vector_pi(int* v, int i);
+int vector_ref(int* v, int i);
 int vector_rep_ref(ptr vp, int i);
-void vector_set(vector vec, int i, int val);
+void vector_set(int* vec, int i, int val);
 void vector_rep_set(ptr vrep, int i, int val);
+void set_car(pair* pair_ptr, int val);
+void set_cdr(pair* pair_ptr, int val);
+void set_car_from_rep(ptr pair_rep, int val);
+void set_cdr_from_rep(ptr pair_rep, int val);
 int get_word(char *p);
 void set_word(void* p, void* vp);
 void set_word_value(void* p, int val);
@@ -95,6 +118,8 @@ unsigned int align_heap(unsigned int size) ;
 unsigned int align_formula(unsigned int size, unsigned align);
 int is_align(unsigned int v, unsigned int align);
 char* add_vectag(char* p) ;
+char* add_cljtag(char* p) ;
+char* add_pairtag(char* p) ;
 char* heap_alloc(memory *mem, char* stack, unsigned int size);
 void allocate_memory(memory* mem, unsigned int stack_size,
                      unsigned int heap_size,
@@ -104,3 +129,11 @@ void delete_memory(memory *mem);
 
 int is_point_to_forward_ptr(char* p);
 char* get_forward_ptr(char* p);
+void queue_init(queue* pq, void* pmem, unsigned int usize,
+    unsigned int align, unsigned int maxsize) ;
+
+int is_queue_empty(queue* pq);
+int is_queue_full(queue* pq);
+void enqueue(queue* pq, void* pv);
+void* dequeue(queue* pq) ;
+void queue_front(queue* pq, void* ret);
