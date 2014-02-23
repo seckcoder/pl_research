@@ -16,7 +16,11 @@ It contains or will contain:
     - basic data type: fixnumber, char, bool, string, vector
     - closure support
     - tail call optimization
-    - TODO: GC, Optimization based on cps transformation
+    - GC
+    - TODO
+      * Big number
+      * Macro system, pattern matching and module system.
+      * Optimization based on cps transformation
   * a scheme compiler compiles to C
 - fp and others
   * monad experiments
