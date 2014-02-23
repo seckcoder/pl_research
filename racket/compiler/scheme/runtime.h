@@ -92,6 +92,8 @@ int get_word(char *p);
 void set_word(void* p, void* vp);
 void set_word_value(void* p, int val);
 unsigned int align_heap(unsigned int size) ;
+unsigned int align_formula(unsigned int size, unsigned align);
+int is_align(unsigned int v, unsigned int align);
 char* add_vectag(char* p) ;
 char* heap_alloc(memory *mem, char* stack, unsigned int size);
 void allocate_memory(memory* mem, unsigned int stack_size,

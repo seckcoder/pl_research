@@ -35,19 +35,12 @@ void test_gc1() {
   allocate_memory(&mem, stack_size, heap_size, global_size, temp_size);
   char* stack = mem.stack_top; // stack on top
   int v1[2] = {1, 2};
-  char* pv1 = vector_alloc(&mem, stack, 2, v1);
-  int v2[1] = {3};
-  vector_alloc(&mem, stack, 1, v2);
+  char* pv1 = vector_alloc(&mem, stack, 2, v1); // 16 bytes
   stack = next_stack_pos(stack);
   set_word(stack, &pv1); // stack point to pv1;
-  int v3[1] = {4};
-  char* pv3 = vector_alloc(&mem, stack, 1, v3); // allocate 8 bytes space, gc started.
-  pv1 = (char*)get_word(stack);
-  print_ptr((ptr)pv1);
-  /*print_ptr((ptr)pv2);*/
-  print_ptr((ptr)pv3);
-  /*printf("%u %u\n", (ptr)mem.heap, (ptr)mem.heap_base);*/
-  printf("%u\n", (ptr)(mem.heap - mem.heap_base));
+  int v2[2] = {3, 4};
+  vector_alloc(&mem, stack, 2, v2); // 16 bytes garbage
+  vector_alloc(&mem, stack, 1, v2); // 8 bytes, trigger gc
   assert(mem.heap - mem.heap_base == 24);
   delete_memory(&mem);
 }
@@ -80,8 +73,9 @@ void test_gc2() {
 
   // pva->pvc->pvf->pva; recursive. pva can't be printed
   vector_alloc(&mem, stack, 1, v); // trigger gc
-  printf("%u\n", (ptr)(mem.heap - mem.heap_base));
+  assert((mem.heap - mem.heap_base) == 56);
   pva = (char*)get_word(stack);
+  delete_memory(&mem);
 }
 
 void test_gc3() {
@@ -95,22 +89,23 @@ void test_gc3() {
   char* stack = mem.stack_top;
   int v1[1] = {1};
   int v2[1] = {2};
-  char* pva = vector_alloc(&mem, stack, 1, v1);
+  char* pva = vector_alloc(&mem, stack, 1, v1); // 8 bytes
   stack = next_stack_pos(stack);
   set_word(stack, &pva);
-  char* pvb = vector_alloc(&mem, stack, 1, v2);
+  char* pvb = vector_alloc(&mem, stack, 1, v2); // 8 bytes
   vector_rep_set((ptr)pva, 0, (int)pvb);
   vector_rep_set((ptr)pvb, 0, (int)pva);
-  vector_alloc(&mem, stack, 1, v1); // garbage
-  vector_alloc(&mem, stack, 1, v1); // trigger gc
-  printf("%u\n", (ptr)(mem.heap - mem.heap_base));
-  pva = (char*)get_word(stack);
+  int v3[3] = {1,2,3};
+  vector_alloc(&mem, stack, 3, v3); // 16bytes garbage
+  vector_alloc(&mem, stack, 1, v3); // 8bytes, trigger gc
+  assert((mem.heap - mem.heap_base) == 24);
+  delete_memory(&mem);
 }
 
 int main(int argc, const char *argv[])
 {
-  /*test_gc1();*/
+  test_gc1();
   test_gc2();
-  /*test_gc3();*/
+  test_gc3();
   return 0;
 }

@@ -1,4 +1,4 @@
-all:main
+all:test
 
 RUNTIMEOBJ=runtime.c
 clean:

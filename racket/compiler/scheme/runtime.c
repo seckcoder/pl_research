@@ -257,31 +257,70 @@ void reset_memory(char* start, char* end) {
   memset(start, 0, end-start);
 }
 
-// a simple implementation of queue
+// a simple implementation of circular queue
 typedef struct {
   void* front;
   void* tail;
+  void* base;
+  void* top;
   unsigned int usize; // number of bytes for each cell in queue
+  unsigned int maxsize; // max number of bytes the queue can store
 } queue;
 
-void queue_init(queue* pq, void* pmem, unsigned int usize) {
+// pmem: base of the memory that queue lies on
+// usize: the size of cell in queue
+// align: the alignment that the base, usize and maxsize should follow
+// maxsize: max size of the queue
+void queue_init(queue* pq, void* pmem, unsigned int usize,
+    unsigned int align, unsigned int maxsize) {
+  assert(
+      is_align(usize, align) &&
+      is_align(maxsize, align) &&
+      is_align((int)pmem, align));
   pq->usize = usize;
-  pq->front = pq->tail = pmem;
-}
-void enqueue(queue* pq, void* pv) {
-  memcpy(pq->tail, pv, pq->usize);
-  pq->tail += pq->usize;
-}
-
-// return pointer to the value
-void* dequeue(queue* pq) {
-  void* temp = pq->front;
-  pq->front += pq->usize;
-  return temp;
+  pq->maxsize = maxsize;
+  pq->base = pq->front = pq->tail = pmem;
+  pq->top = pmem + maxsize;
 }
 
 int is_queue_empty(queue* pq) {
   return pq->front == pq->tail;
+}
+
+int is_queue_full(queue* pq) {
+  if ((pq->front - pq->tail) == pq->usize) {
+    // we assume if there is only one cell available, then the
+    // queue is full!
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+void _enqueue(queue* pq, void* pv) {
+  memcpy(pq->tail, pv, pq->usize);
+  pq->tail += pq->usize;
+}
+void enqueue(queue* pq, void* pv) {
+  assert(!is_queue_full(pq));
+  if (pq->tail + pq->usize <= pq->top) {
+    _enqueue(pq, pv);
+  } else {
+    assert(pq->tail == pq->top); // alignment
+    pq->tail = pq->base;
+    _enqueue(pq, pv);
+  }
+}
+
+// return pointer to the value
+void* dequeue(queue* pq) {
+  assert(!is_queue_empty(pq));
+  void* temp = pq->front;
+  pq->front += pq->usize;
+  if (pq->front >= pq->top) {
+    pq->front = pq->base;
+  }
+  return temp;
 }
 
 void queue_front(queue* pq, void* ret) {
@@ -292,7 +331,6 @@ void queue_front(queue* pq, void* ret) {
 void traverse_roots(char* base, char* top, queue* pq, memory* pmem) {
   while (base < top) {
     char* p = (char*)get_word(base); // p is pointer lies on stack but points to the heap 
-    base += wordsize;
     int is_forward_ptr = 0;
     char* new_p = gc_forward(p, pmem, &is_forward_ptr);
     assert(new_p != NULL);
@@ -303,17 +341,20 @@ void traverse_roots(char* base, char* top, queue* pq, memory* pmem) {
         enqueue(pq, &new_p); // add newptr to queue
       }
     }
+    base += wordsize; // step base pointer
   }
 }
 
 // stop and copy garbage collection.
 // BFS
 void gc(memory *mem, char* stack) {
+  /*printf("gc\n");*/
   reset_memory(mem->heap_base1, mem->heap_top1);
   mem->heap = mem->heap_base1; // set new heap pointer
 
   queue ptrq;
-  queue_init(&ptrq, mem->temp_base, wordsize);
+  queue_init(&ptrq, mem->temp_base, wordsize, wordsize,
+      mem->temp_top - mem->temp_base);
 
 
   // traverse stack
@@ -335,6 +376,7 @@ void gc(memory *mem, char* stack) {
         char* vi = (char*)get_word(pvi); // get ith element
         int is_forward_ptr = 0;
         char* new_vi = gc_forward(vi, mem, &is_forward_ptr);
+        /*printf("is_forward_ptr:%d\n", is_forward_ptr);*/
         assert(new_vi != NULL);
         if (new_vi != vi) {
           set_word(pvi, &new_vi);
@@ -352,18 +394,22 @@ void gc(memory *mem, char* stack) {
   // mem->heap now points to the address of the first free position in heap
 }
 
+int is_align(unsigned int v, unsigned int align) {
+  return align_formula(v, align) == v;
+}
+unsigned int align_formula(unsigned int size, unsigned int align) {
+  return (size + align - 1) & -align;
+}
 unsigned int align_heap(unsigned int size) {
-  return (size + heap_align - 1) & -heap_align;
+  return align_formula(size, heap_align);
 }
 
 char* heap_alloc(memory *mem, char* stack, unsigned int size) {
   // [heap_base, heap_top)
-  /*printf("%u %u %u\n", (ptr)(mem->heap),size, (ptr)mem->heap_top);*/
-  printf("size:%u\n", size);
-  if (mem->heap + size >= mem->heap_top) {
+  if (mem->heap + size > mem->heap_top) {
     gc(mem, stack);
   }
-  assert((mem->heap + size) < mem->heap_top);
+  assert((mem->heap + size) <= mem->heap_top);
   char* heap_tmp = mem->heap;
   mem->heap += size;
   return heap_tmp;
@@ -407,13 +453,13 @@ void allocate_memory(memory* mem, unsigned int stack_size,
   memset(mem_global_base, 0, global_size);*/
 
   mem->heap = mem_heap_base;
-  mem->global = mem_global_base;
   mem->heap_base = mem_heap_base;
   mem->heap_top = mem->heap_base + heap_size/2;
   mem->heap_base1 = mem->heap_top;
   mem->heap_top1 = mem->heap_base + heap_size;
   mem->stack_base = mem_stack_base;
   mem->stack_top = mem->stack_base + stack_size;
+  mem->global = mem_global_base;
   mem->global_base = mem_global_base;
   mem->global_top = mem->global_base + global_size;
   mem->heap_perm_base = mem_heap_base;
