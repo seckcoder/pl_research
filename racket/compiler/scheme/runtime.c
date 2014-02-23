@@ -211,33 +211,6 @@ char* add_vectag(char* p) {
   return (p + vec_tag);
 }
 
-// recursive version of gc_forward
-// DFS search
-/*void gc_forward_rec(char* p, char* pp, memory* mem) {
-  if (point_to_forward_ptr((ptr)p)) {
-    char* forw_ptr = get_forward_ptr((ptr)p);
-    set_word(pp, &forw_ptr);
-  } else if (is_heap_ptr((ptr)p)) {
-    if (is_vector((ptr)p)) {
-      vector vec = to_vector((ptr)p);
-      int vec_size = vector_length(vec) * wordsize + wordsize;
-      char* new_p = mem->heap;
-      mem->heap += vec_size;
-      memcpy(new_p, (char*)vec, vec_size); // copy content
-      mark_forward((char*)vec, new_p);
-      int i = 0;
-      for(i = 0; i < vec_size; i++) {
-        char* ppi = new_p + (i+1)*wordsize;
-        char* pi = (char*)get_word(ppi);
-        gc_forward_rec(pi, ppi, mem);
-      }
-    } // ...
-  } else {
-    // ignored
-  }
-}*/
-
-
 // copy/forward p to the newspace
 char* gc_forward(char* p, memory* mem,
     // return values:
@@ -246,10 +219,8 @@ char* gc_forward(char* p, memory* mem,
   if (!is_heap_ptr((ptr)p)) {
     // not a pointer to heap
     // should be immediate value
-    printf("is not heap ptr\n");
     return p;
   } else if (is_vector((ptr)p)) {
-    printf("is vector\n");
     // is_point_to_forward_ptr should be included in is_vector 
     // test!!! Think about it!
     vector vec = to_vector((ptr)p);
@@ -258,11 +229,9 @@ char* gc_forward(char* p, memory* mem,
       return get_forward_ptr((char*)vec);
     } else {
       unsigned int vec_size = align_heap((vector_length(vec) + 1) * wordsize);
-      /*printf("vec size:%d\n", vec_size);*/
       char* new_p = mem->heap;
       mem->heap += vec_size;
       memcpy(new_p, (char*)vec, vec_size); // copy content of p to new space
-      /*printf("%d\n", get_word(new_p));*/
       new_p = add_vectag(new_p);  // add tag
       mark_forward(new_p, (char*)vec); // vec->new_p
       return new_p;
@@ -273,6 +242,7 @@ char* gc_forward(char* p, memory* mem,
   }
 }
 
+// swap heap_base,heap_top and heap_base1,heap_top1
 void swap_mem_heap(memory* mem) {
   char* temp = mem->heap_base1;
   mem->heap_base1 = mem->heap_base;
@@ -282,11 +252,10 @@ void swap_mem_heap(memory* mem) {
   mem->heap_top = temp;
 }
 
+// reset a block of memory
 void reset_memory(char* start, char* end) {
   memset(start, 0, end-start);
 }
-
-
 
 // a simple implementation of queue
 typedef struct {
@@ -320,33 +289,38 @@ void queue_front(queue* pq, void* ret) {
 }
 
 
+void traverse_roots(char* base, char* top, queue* pq, memory* pmem) {
+  while (base < top) {
+    char* p = (char*)get_word(base); // p is pointer lies on stack but points to the heap 
+    base += wordsize;
+    int is_forward_ptr = 0;
+    char* new_p = gc_forward(p, pmem, &is_forward_ptr);
+    assert(new_p != NULL);
+    if (p != new_p) {
+      // p is forwarded to another mem place
+      set_word_value(base, (int)new_p); // set content pointed by base as value of new_p
+      if (!is_forward_ptr) {
+        enqueue(pq, &new_p); // add newptr to queue
+      }
+    }
+  }
+}
+
 // stop and copy garbage collection.
 // BFS
 void gc(memory *mem, char* stack) {
-  printf("gc: %d\n", (mem->stack_top - stack));
   reset_memory(mem->heap_base1, mem->heap_top1);
   mem->heap = mem->heap_base1; // set new heap pointer
 
   queue ptrq;
   queue_init(&ptrq, mem->temp_base, wordsize);
 
-  // stack roots
-  while (stack < mem->stack_top)  {
-    char* pp = stack;
-    char* p = (char*)get_word(pp); // p is pointer lies on stack but points to the heap
-    int is_forward_ptr = 0;
-    char* new_p = gc_forward(p, mem, &is_forward_ptr);
-    assert(new_p != NULL);
-    if (p != new_p) {
-      set_word(pp, &new_p);  // update stack position
-      if (!is_forward_ptr) {
-        enqueue(&ptrq, &new_p); // add newptr to queue
-      }
-    }
-    stack += wordsize;
-  }
 
-  // global roots
+  // traverse stack
+  traverse_roots(stack, mem->stack_top, &ptrq, mem);
+
+  // traverse global
+  traverse_roots(mem->global_base, mem->global, &ptrq, mem);
 
   while (!is_queue_empty(&ptrq)) {
     char* p;
@@ -359,13 +333,9 @@ void gc(memory *mem, char* stack) {
       for(i = 0; i < vec_len; i+=1) {
         char* pvi = vector_pi(vec, i); // pointer to ith element of vector
         char* vi = (char*)get_word(pvi); // get ith element
-        /*print_ptr((ptr)vi);*/
         int is_forward_ptr = 0;
         char* new_vi = gc_forward(vi, mem, &is_forward_ptr);
-        printf("is forward_ptr:%d\n", is_forward_ptr);
-        /*print_ptr((ptr)new_vi);
-        printf("%d\n", (new_vi == vi));*/
-        assert(new_vi!= NULL);
+        assert(new_vi != NULL);
         if (new_vi != vi) {
           set_word(pvi, &new_vi);
           if (!is_forward_ptr) {
@@ -374,8 +344,7 @@ void gc(memory *mem, char* stack) {
         }
       }
     } else {
-      printf("something unknown\n");
-      print_ptr((ptr)p);
+      // just ignore
     }
   }
   swap_mem_heap(mem); // swap old space and new space
