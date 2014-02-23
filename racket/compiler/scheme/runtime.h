@@ -61,6 +61,8 @@ typedef struct {
   char* global_top;
   char* heap_perm_base;
   char* heap_perm_top;
+  char* temp_base;  // memories for temporary usage
+  char* temp_top;
 } memory;
 
 typedef struct {
@@ -75,6 +77,7 @@ int is_heap_ptr(ptr p);
 int is_vector(ptr p);
 void set_heap_ptr_tag(ptr *p, int tag);
   
+int to_fixnum(ptr x) ;
 int to_fixnum_rep(int v);
 void print_ptr(ptr x);
 void print_ptr_rec(ptr x) ;
@@ -82,11 +85,20 @@ int vector_length(vector v);
 vector to_vector(ptr p) ;
 char* vector_pi(vector v, int i);
 int vector_ref(vector v, int i);
+int vector_rep_ref(ptr vp, int i);
+void vector_set(vector vec, int i, int val);
+void vector_rep_set(ptr vrep, int i, int val);
 int get_word(char *p);
 void set_word(void* p, void* vp);
+void set_word_value(void* p, int val);
 unsigned int align_heap(unsigned int size) ;
 char* add_vectag(char* p) ;
 char* heap_alloc(memory *mem, char* stack, unsigned int size);
 void allocate_memory(memory* mem, unsigned int stack_size,
-                     unsigned int heap_size, unsigned int global_size);
+                     unsigned int heap_size,
+                     unsigned int global_size,
+                     unsigned int temp_size);
 void delete_memory(memory *mem);
+
+int is_point_to_forward_ptr(char* p);
+char* get_forward_ptr(char* p);

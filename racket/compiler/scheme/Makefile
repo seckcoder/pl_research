@@ -7,8 +7,8 @@ clean:
 scheme:
 	gcc -O1 -o stst start.c stst.s
 
-test:$(RUNTIMEOBJ) test_gc.o
-	gcc -o $@ $^
+test:$(RUNTIMEOBJ) test_gc.c
+	gcc -g -o $@ $^
 
 ctest:ctest.c
 	clang -S ctest.c
