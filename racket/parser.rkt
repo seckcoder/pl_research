@@ -6,6 +6,12 @@
 
 (provide (all-defined-out))
 
+(define (const? v)
+  (or (number? v)
+      (string? v)
+      (char? v)
+      (boolean? v)))
+
 (define-datatype
   expression expression?
   (const-exp

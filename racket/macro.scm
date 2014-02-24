@@ -1,6 +1,9 @@
 #lang racket
+
 #|(print-gensym #f)
 (print-gensym 'pretty/suffix)|#
+
+; Note there should be only one exception in syntax-transformer's body
 
 (define-syntax let1
   (syntax-rules ()
@@ -139,4 +142,12 @@
   [* (display "*")]
   [- (display "-")])
 
+(define-syntax for
+  (syntax-rules (in)
+    ((for element in list body ...)
+     (map (lambda (element)
+            body ...)
+          list))))
+
+(for i in '(0 1 2 3 4) (print i))
 ; syntax-case...
