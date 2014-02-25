@@ -95,6 +95,7 @@
                                    boolean? not zero?
                                    car cdr pair?
                                    print length
+                                   constant-ref
                                    )))
 
 (define (biop? op)

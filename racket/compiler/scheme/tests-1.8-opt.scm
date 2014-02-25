@@ -44,7 +44,7 @@
    => "((#t #t . #t) ((#f . #f) . #f))\n"]
 )
 
-(add-tests-with-string-output "procedures"
+#|(add-tests-with-string-output "procedures"
   [(letrec () 12) => "12\n"]
   [(letrec () (let ([x 5]) (fx+ x x))) => "10\n"]
   [(letrec ([f (lambda () 5)]) 7) => "7\n"]
@@ -74,4 +74,4 @@
   [(letrec ([e (lambda (x) (if (fxzero? x) #t (o (fxsub1 x))))]
             [o (lambda (x) (if (fxzero? x) #f (e (fxsub1 x))))])
      (e 25)) => "#f\n"]
-)
+)|#

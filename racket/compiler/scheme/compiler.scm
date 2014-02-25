@@ -7,15 +7,24 @@
          "../../base/utils.rkt"
          "base.rkt"
          "parser.rkt"
+         "constants.rkt"
          "closure-conversion.rkt"
          "global.rkt")
 
+(define (clj-cvt e)
+  (closure-conversion e 'bottom-up))
 (define (compile-program x)
   (init-global!)
+  (print
+    (~> x
+        parse
+        lift-constant
+        clj-cvt))
+  (newline)
   (~> x
       parse
-      (lambda (e)
-        (closure-conversion e 'bottom-up))
+      lift-constant
+      clj-cvt
       emit-program))
 
 (define (emit-global n code)
@@ -33,7 +42,16 @@
                    #t) body)
         (emit "   ret")
         )]
+    [`(datum ,v)
+      (emit "# global constant")
+      (emit "   .local ~a" n)
+      (emit "   .comm ~a,~a,~a" n wordsize wordsize)
+      (emit-global-constant v)
+      (emit "   movl %eax, ~a # move global constant pointer value" n)]
     ))
+
+(define (emit-global-constant v)
+  ((emit-exp 
 
 (define (emit-global*)
   (for-each
@@ -51,6 +69,7 @@
 
 (define (emit-program x)
   (emit "   .text")
+  (emit-global*)
   ; We need L_scheme_entry since we need to make sure that when starting
   ; to emit-exp, the value above %esp is a return address. Otherwise,
   ; the tail-optimization will not work.
@@ -73,7 +92,6 @@
   (emit "   call L_scheme_entry")
   (emit-restore-regs)
   (emit "   ret # return from scheme_entry")
-  ;(emit-global-proc*)
   )
 (define (emit-preserve-regs)
   (define (si-of-i i)
@@ -269,13 +287,6 @@
         (error 'emit-rands "some error happened"))
       (emit-swap-rands-range si new-si)
       new-si))
-  (define (emit-call-proc rator rands)
-    (let ([new-si (emit-rands rands)])
-      ;(printf "~a ~a\n" si new-si)
-      ; it's (+ wordsize new-si)!!!
-      (emit "   addl $~s, %esp" (+ wordsize new-si))
-      (emit "   call ~a" rator)
-      (emit "   subl $~s, %esp" (+ wordsize new-si))))
   (define (emit-make-vec n)
     ((emit-exp si env #f) n)
     (emit "   movl %eax, ~s(%esp) #store length to stack" si)
@@ -324,6 +335,8 @@
       )
     (emit "# emit-vec-from-values end")
     )
+  (define (emit-constant-ref v)
+    ...)
   (define (emit-cons a d)
     (let ([new-si (emit-exps-push-all si env (list a d))])
       (emit-alloc-heap new-si
@@ -404,6 +417,8 @@
           (emit-vec-set! v i val)]
         [`(vec ,v* ...)
           (emit-vec-from-values v*)]
+        [`(constant-ref ,v)
+          (emit-constant-ref v)]
         [(list (? unop? op) v)
          (emit-unop op v)]
         [(list (? biop? op) a b)
@@ -442,8 +457,6 @@
             f*
             proc*)
           (emit-exp1 exp)]
-        [`(app-proc ,rator ,rand* ...)
-          (emit-call-proc rator rand*)]
         [`(closure ,f ,rv)
           (emit-closure f rv)]
         [`(app ,rator ,rand* ...)
@@ -667,15 +680,15 @@
        (emit "   movl $~s, %eax" aligned-size)
        (emit-alloc-heap1 si))]))
 
-(load "tests-1.3-req1.scm")
+#|(load "tests-1.3-req1.scm")
 (load "tests-1.4-req.scm")
 (load "tests-1.6-req.scm")
 (load "tests-1.6-opt.scm")
 (load "tests-1.5-req.scm")
-(load "tests-1.5-opt.scm")
+(load "tests-1.5-opt.scm")|#
 
-(load "tests-1.8-opt.scm") ; test pair
-; (load "tests-sexp.scm")
+;(load "tests-1.8-opt.scm") ; test pair
 ;(load "tests-print.scm")
 ;(load "tests-proc.scm")
 ;(load "tests-vector.scm")
+(load "tests-constant.scm")
