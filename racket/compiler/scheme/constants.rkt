@@ -12,6 +12,7 @@
     [`(quote ,v)
       (error 'quote "quote in quote not handled")]
     [(? symbol?)
+     ; symbol
      (error 'symbol " not implemented")]
     [(? pair?)
      ; complex constant
