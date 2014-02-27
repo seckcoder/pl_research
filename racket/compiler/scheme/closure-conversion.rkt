@@ -25,6 +25,8 @@
                        (match e
                          [(? immediate?)
                           e]
+                         [(? string?)
+                          e]
                          [(? symbol?)
                           e]
                          [`(constant-ref ,v)
@@ -69,6 +71,8 @@
   (lambda (e)
     (match e
       [(? immediate?)
+       (seteq)]
+      [(? string?)
        (seteq)]
       [(? symbol? v)
        (seteq v)]
@@ -119,6 +123,7 @@
     (define (subst1 e)
       (match e
         [(? immediate?) e]
+        [(? string?) e]
         [(? symbol? v)
          (let ([idx (index-of fvs v)])
            (if (>= idx 0)

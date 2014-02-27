@@ -243,6 +243,9 @@
         ['length
          (emit-remove-vectag 'eax)
          (emit "   movl (%eax), %eax # move vector length to eax")]
+        ['string-length
+         (emit-remove-strtag 'eax)
+         (emit "   movl (%eax), %eax # move string length to eax")]
         [_ (error 'emit-unop "~a is not an unary operator" op)]))
     (define (emit-biop op a b)
       (define (emit-*)
@@ -323,10 +326,10 @@
       new-si))
   (define (emit-make-vec n)
     ((emit-exp si env #f) n)
-    (emit "   movl %eax, ~s(%esp) #store length to stack" si)
+    (emit "   movl %eax, ~s(%esp) #store vec length to stack" si)
     (emit-remove-fxtag 'eax) ; %eax store length
     (emit-calc-vector-size)
-    (emit-alloc-heap (- si wordsize) #f) ; vec length on stack
+    (emit-alloc-heap (- si wordsize) #t) ; vec length on stack
     (emit-stack->heap si 0)
     (emit-add-vectag 'eax))
   (define (emit-vec-ref v i)
@@ -369,6 +372,46 @@
       )
     (emit "# emit-vec-from-values end")
     )
+  (define (emit-make-string n)
+    ((emit-exp si env #f) n)
+    (emit "   movl %eax, ~s(%esp) # store str len" si)
+    (emit-remove-fxtag 'eax)
+    (emit-calc-string-size)
+    (emit-alloc-heap (- si wordsize) #f)
+    (emit-stack->heap si 0) ; move length to heap
+    (emit-add-strtag 'eax))
+  (define (emit-string-ref s i)
+    (emit-exps-leave-last si env (list s i))
+    (emit-remove-fxtag 'eax)
+    (emit "   movl ~s(%esp), %ecx # str pointer" si)
+    (emit-remove-strtag 'ecx)
+    (emit "   movl $0, %edx # reset edx")
+    (emit "   movb ~s(%ecx, %eax), %dl # ith value in str" wordsize)
+    (emit "   movl %edx, %eax")
+    (emit-add-chartag 'eax)
+    )
+  (define (emit-string-set s i c)
+    (emit-exps-leave-last si env (list s i c))
+    (emit "   movl ~s(%esp), %ecx # get string pointer" si) ; s
+    (emit "   movl ~s(%esp), %edx # get idx:i" (- si wordsize)) ; i
+    (emit-remove-chartag 'eax)
+    (emit-remove-strtag 'ecx)
+    (emit-remove-fxtag 'edx)
+    (emit "   movb %al, ~a(%ecx, %edx) # string-set!" wordsize)
+    )
+  (define (emit-string-from-values cs)
+    (let* ([len (length cs)]
+           [new-si (emit-exps-push-all si env cs)])
+      ;(printf "~a ~a ~a\n" len si new-si)
+      (emit-alloc-heap new-si
+                       (+ wordsize len))
+      (emit "   movl $~s, (%eax) # move len to str"
+            (immediate-rep len))
+
+      (for ([i (in-range 0 len)])
+        (emit-stack->heap-by-char (- si (* i wordsize))
+                                  (+ wordsize i)))
+      (emit-add-strtag 'eax)))
   (define (emit-constant-ref v)
     (emit-load-global-to-eax v)
     (emit "   movl (%eax), %eax # constant-ref"))
@@ -433,12 +476,28 @@
       [(list si env)
        ((emit-exp si env tail?)
         body)]))
+  (define (emit-char-seq s reg start)
+    ; chars to heap, reg as pointer to heap,
+    ; start is the si of heap pointer
+    (for ([c (in-string s)]
+          [i (in-naturals start)])
+      (emit "   movb $~a, ~a(%eax)"
+            (char->integer c)
+            i)
+      ))
+  (define (emit-string s)
+    (emit-alloc-heap si (+ wordsize (string-length s)))
+    (emit "   movl $~a, (%eax) # str len" (immediate-rep (string-length s)))
+    (emit-char-seq s 'eax wordsize)
+    (emit-add-strtag 'eax))
   ; ## emit-exp1 ##
   (define emit-exp1
     (lambda (exp)
       (match exp
         [(? immediate? x)
          (emit "   movl $~s, %eax # emit immediate:~a" (immediate-rep x) x)]
+        [(? string? s)
+         (emit-string s)]
         [(? symbol? v)
          ; variable
          (let ([pos (env:app env v)])
@@ -452,6 +511,14 @@
           (emit-vec-set! v i val)]
         [`(vec ,v* ...)
           (emit-vec-from-values v*)]
+        [`(make-string ,n)
+          (emit-make-string n)]
+        [`(string-ref ,s ,i)
+          (emit-string-ref s i)]
+        [`(string-set! ,s ,i ,c)
+          (emit-string-set s i c)]
+        [`(string ,c* ...)
+          (emit-string-from-values c*)]
         [`(constant-ref ,v)
           (emit-constant-ref v)]
         [(list (? unop? op) v)
@@ -556,7 +623,17 @@
 (define (emit-add-pairtag reg)
   (emit "   orl $~s, %~a # add pairtag" pairtag reg))
 (define (emit-remove-pairtag reg)
-  (emit "   subl $~s, %~a" pairtag reg))
+  (emit "   subl $~s, %~a # remove pairtag" pairtag reg))
+(define (emit-add-strtag reg)
+  (emit "   orl $~s, %~a # add strtag" strtag reg))
+(define (emit-remove-strtag reg)
+  (emit "   subl $~s, %~a # remove strtag" strtag reg))
+(define (emit-add-chartag reg)
+  (emit "   shl $~s, %~a # add chartag" charshift reg)
+  (emit "   orl $~s, %~a" chartag reg)
+  )
+(define (emit-remove-chartag reg)
+  (emit "   shr $~s, %~a # remove chartag" charshift reg))
 
 (define gen-label
   (let ([count 0])
@@ -576,6 +653,12 @@
 (define (emit-eax->stack si)
   (emit "   movl %eax, ~s(%esp) # save eax value to stack" si)
   (- si wordsize))
+
+; move ah to stack; return next si
+; this is used for move characters
+(define (emit-al->stack si)
+  (emit "   movb %al, ~s(%esp) # save ah to stack" si)
+  (- si 1))
 
 ; return si
 (define (emit-exps-leave-last si env exps)
@@ -608,6 +691,19 @@
     new-si)
   )
 
+(define (emit-exps-push-all-by-char si env exps [tail? #f])
+  (emit "# emit-exps-push-all-by-char")
+  (let ([new-si
+          (foldl
+            (match-lambda*
+              [(list exp si)
+               ((emit-exp si env tail?) exp)
+               (emit-remove-chartag 'eax)
+               (emit-al->stack si)])
+            si
+            exps)])
+    (emit "# emit-exps-push-all-by-char end")
+    (align new-si wordsize)))
 ; swap i(%base) j(%base)
 (define (emit-swap i j [base 'esp])
   (emit "   movl ~s(%~s), %ecx" i base)
@@ -648,6 +744,11 @@
   (emit "   movl ~s(%esp), %ecx # move stack value to heap" stack-pos)
   (emit "   movl %ecx, ~s(%eax)" heap-pos))
 
+(define (emit-stack->heap-by-char stack-pos heap-pos)
+  (emit "   movl ~s(%esp), %ecx # move stack char value to ecx" stack-pos)
+  (emit-remove-chartag 'ecx)
+  (emit "   movb %cl, ~s(%eax) # move char to heap" heap-pos))
+
 ; move [start ... end] to [to_start ...]
 (define (emit-stack-move-range start step end to_start)
   (emit "# emit-stack-move-range ~a ~a ~a ~a"
@@ -685,6 +786,10 @@
   (emit "   addl $1, %eax # calculate vector size with %eax store length")
   (emit "   imull $~s, %eax" wordsize))
 
+(define (emit-calc-string-size)
+  ; length in %eax
+  (emit "   addl $~a, %eax # calc str byte size" wordsize))
+
 (define (emit-foreign-call si funcname)
   (emit "   addl $~s, %esp" (+ si wordsize))
   (emit "   call ~a" funcname)
@@ -709,9 +814,8 @@
        (emit "   andl $~s, %eax" (- heap-align)))
      (emit-alloc-heap1 si)]
     [(list si (? number? size))
-     ; size is the bytes to allocate
-     (let ([aligned-size (bitwise-and (+ size (sub1 heap-align))
-                                      (- heap-align))])
+     ; size is the num of bytes to allocate
+     (let ([aligned-size (align-heap-size size)])
        (emit "   movl $~s, %eax # aligned size to eax" aligned-size)
        (emit-alloc-heap1 si))]))
 

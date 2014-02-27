@@ -118,6 +118,16 @@ void print_vector(int* x) {
   }
 }
 
+void print_string(char* s) {
+  unsigned int len = string_length(s);
+  s += wordsize; // move to point to first char
+  char *c_str = (char*)malloc(len+1);
+  memcpy(c_str, s, len); // copy str content
+  c_str[len] = '\0'; // null terminated
+  printf("%s", c_str);
+  free(c_str);
+}
+
 void print_ptr_rec(ptr x) {
   /*printf("%u\n", x);*/
   if (is_fixnum(x)) {
@@ -136,7 +146,9 @@ void print_ptr_rec(ptr x) {
     printf(")");
   } else if (is_vector(x)) {
     print_vector(to_vector(x));
-  }  else {
+  } else if (is_string(x)) {
+    print_string(to_string(x));
+  } else {
     printf("#<unknown 0x%08x>", x);
   }
 }
@@ -184,6 +196,9 @@ void mark_forward(char *new_p, char *p) {
 int* to_vector(ptr p) {
   return (int*)(p - vec_tag);
 }
+char* to_string(ptr p) {
+  return (char*)(p - str_tag);
+}
 
 // get length of the vector stored in p
 int vector_length(int* v) {
@@ -226,6 +241,11 @@ void set_cdr_from_rep(ptr pair_rep, int val) {
   set_cdr(to_pair(pair_rep), val);
 }
 
+unsigned int string_length(char* s) {
+  return to_fixnum((ptr)get_word(s)); // get string length
+}
+
+
 char* add_heapptr_tag(char* p, unsigned int tag) {
   return (p + tag);
 }
@@ -263,6 +283,10 @@ char* copy_as_clojure(memory* mem, char* pv, unsigned int size) {
   return copy_to_newspace(mem, pv, size, clj_tag);
 }
 
+char* copy_as_string(memory* mem, char* pv, unsigned int size) {
+  return copy_to_newspace(mem, pv, size, str_tag);
+}
+
 // copy/forward p to the newspace
 char* gc_forward(char* p, memory* mem,
     // return values:
@@ -298,6 +322,15 @@ char* gc_forward(char* p, memory* mem,
       return get_forward_ptr((char*)clj_ptr);
     } else {
       return copy_as_clojure(mem, (char*)clj_ptr, 2 * wordsize);
+    }
+  } else if (is_string((ptr)p)) {
+    char* str_ptr = to_string((ptr)p);
+    if (is_point_to_forward_ptr(str_ptr)) {
+      *is_forward_ptr = 1;
+      return get_forward_ptr((char*)str_ptr);
+    } else {
+      unsigned int str_size = align_heap(string_length(str_ptr) + wordsize);
+      return copy_as_string(mem, str_ptr, str_size);
     }
   } else {
     print_ptr((ptr)p);
@@ -454,6 +487,8 @@ void gc(memory *mem, char* stack) {
       closure* pclj = to_closure((ptr)p);
       // for clojure, there's only a pointer(env)
       forward_and_update((char*)pclj->env,(char*)(&(pclj->env)), mem, &ptrq);
+    } else if (is_string((ptr)p)) {
+      // ignore string since it doesn't contain sub pointers
     } else {
       // just ignore
     }

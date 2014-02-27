@@ -14,11 +14,14 @@
       `(let ([,v0 ,e0])
          ,(parse `(let* ,bind* ,@body)))]
     [(? immediate?) x]
+    [(? string?) x]
     [(? symbol?) x]
     [`(quote ,v)
       x]
     [`(make-vec)
       (parse `(make-vec 0))]
+    [`(make-string)
+      (parse `(make-string 0))]
     [(list (? prim-op? op) v* ...)
      `(,op ,@(map parse v*))]
     [`(if ,test ,then ,else)

@@ -9,6 +9,7 @@
 (define (transform-constant v)
   (match v
     [(? immediate?) v]
+    [(? string?) v]
     [`(quote ,v)
       (error 'quote "quote in quote not handled")]
     [(? symbol?)
@@ -32,6 +33,7 @@
 (define (lift e)
   (match e
     [(? immediate?) e]
+    [(? string?) e]
     [(? symbol?) e]
     [`(quote ,v)
       (transform-constant v)]

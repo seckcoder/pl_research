@@ -70,7 +70,6 @@
       (boolean? x)
       (char? x)
       (null? x)
-      (string? x)
       ))
 
 (define (immediate-rep x)
@@ -95,6 +94,7 @@
                                    car cdr pair?
                                    print length
                                    constant-ref
+                                   string-length
                                    )))
 
 (define (biop? op)
@@ -115,6 +115,14 @@
 (define (prim-op? op)
   (or (unop? op)
       (biop? op)
-      (memq op '(make-vec vec-ref vec-set! vec
-                          print))))
+      (memq op '(print
+                 make-vec vec-ref vec-set! vec
+                 make-string string-ref string-set! string
+                          ))))
 
+(define (align size align-size)
+  (bitwise-and (+ size (sub1 align-size))
+               (- align-size)))
+
+(define (align-heap-size size)
+  (align size heap-align))
