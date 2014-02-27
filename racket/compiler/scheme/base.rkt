@@ -35,8 +35,7 @@
 (define strtag #x06)
 (define heap-align 8)
 
-; offset of heap, global
-(define heap-offset 0)
+; offset of global
 (define global-offset 4)
 
 (define registers
@@ -110,6 +109,7 @@
               <= fx<=
               > fx>
               >= fx>=
+              eq?
               )))
 
 (define (prim-op? op)

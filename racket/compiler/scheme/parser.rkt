@@ -17,18 +17,6 @@
     [(? symbol?) x]
     [`(quote ,v)
       x]
-    [`(eq? ,a ,b)
-      (cond
-        [(and (fixnum? a) (fixnum? b))
-         `(fx= ,a ,b)]
-        [(and (boolean? a) (boolean? b))
-         `(boolean=? a b)]
-        [(and (char? a) (char? b))
-         `(char=? a b)]
-        [(and (symbol? a) (symbol? b))
-         `(symbol=? a b)]
-        [else #f]
-        )]
     [`(make-vec)
       (parse `(make-vec 0))]
     [(list (? prim-op? op) v* ...)

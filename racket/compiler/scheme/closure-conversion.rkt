@@ -27,6 +27,9 @@
                           e]
                          [(? symbol?)
                           e]
+                         [`(constant-ref ,v)
+                           ; for constant-ref, return it directly
+                           e]
                          [(list (? prim-op? op) v* ...)
                           `(,op ,@(map cvt-up v*))]
                          [`(if ,test ,then ,else)
@@ -69,6 +72,9 @@
        (seteq)]
       [(? symbol? v)
        (seteq v)]
+      [`(constant-ref ,v)
+        ; v is not free variable, it's global variable
+        (seteq)]
       [(list (? prim-op? op) v* ...)
        (free-U v*)]
       [`(if ,test ,then ,else)
@@ -118,6 +124,9 @@
            (if (>= idx 0)
              `(vec-ref ,env ,idx)
              v))]
+        [`(constant-ref ,v)
+          ; don't replace constant-ref
+          e]
         [(list (? prim-op? op) v* ...)
          `(,op ,@(map subst1 v*))]
         [`(if ,test ,then ,else)

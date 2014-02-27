@@ -15,22 +15,16 @@
   (closure-conversion e 'bottom-up))
 (define (compile-program x)
   (init-global!)
-  (print
-    (~> x
-        parse
-        lift-constant
-        clj-cvt))
-  (newline)
   (~> x
       parse
       lift-constant
       clj-cvt
       emit-program))
 
-(define (emit-global n code)
+(define (emit-global-proc n code)
   (match code
     [`(proc (,v* ...) ,body)
-      (emit "~s:" n)
+      (emit-fn-header n)
       (let* ([v*-num (length v*)]
              [env (env:init v*
                             (range (- wordsize)
@@ -42,22 +36,59 @@
                    #t) body)
         (emit "   ret")
         )]
+    [_ (void)]))
+
+(define (emit-global-constant n code)
+  (match code
     [`(datum ,v)
       (emit "# global constant")
       (emit "   .local ~a" n)
       (emit "   .comm ~a,~a,~a" n wordsize wordsize)
-      (emit-global-constant v)
+      ((emit-exp (- wordsize)
+                 (env:empty)
+                 #t) v)
+      (emit-save-eax-to-global)
       (emit "   movl %eax, ~a # move global constant pointer value" n)]
+    [_ (void)]
     ))
 
-(define (emit-global-constant v)
-  ((emit-exp 
+(define (emit-save-eax-to-global)
+  ; save eax register value to global memory,
+  ; so that the value pointed by it can be handled by garbage collection
+  (emit "   movl ~a(%ebp), %ecx # fetch global pointer" global-offset)
+  (emit "   movl %eax, (%ecx) # save eax to global memory")
+  (emit "   addl $~a, ~a(%ebp) # increase global pointer" wordsize global-offset)
+  (emit "   movl %ecx, %eax # return global pointer as result"))
 
-(define (emit-global*)
+(define (emit-load-global-to-eax v)
+  (emit "   movl ~a, %eax" v))
+
+(define (global-proc? code)
+  (match code
+    [`(proc (,v* ...) ,body)
+      #t]
+    [_ #f]))
+
+(define (global-constant? code)
+  (match code
+    [`(datum ,v)
+      #t]
+    [_ #f]))
+
+(define (emit-global-proc*)
   (for-each
     (match-lambda
-      [(list n code)
-       (emit-global n code)])
+      [(list n (? global-proc? code))
+       (emit-global-proc n code)]
+      [_ (void)])
+    *global*))
+
+(define (emit-global-constant*)
+  (for-each
+    (match-lambda
+      [(list n (? global-constant? code))
+       (emit-global-constant n code)]
+      [_ (void)])
     *global*))
 ; lift lambda
 (define-syntax def-lifted-lambda
@@ -68,15 +99,15 @@
                 `(proc (v* ...) body))]))
 
 (define (emit-program x)
+  (print x)(newline)
   (emit "   .text")
-  (emit-global*)
   ; We need L_scheme_entry since we need to make sure that when starting
   ; to emit-exp, the value above %esp is a return address. Otherwise,
   ; the tail-optimization will not work.
   (emit-fn-header 'L_scheme_entry)
+  (emit-global-constant*)
   ((emit-exp (- wordsize) (env:empty) #t) x)
   (emit "   ret # ret from L_scheme_entry") ; if program is tail-optimized, ret will be ignored
-  ;(emit "   ret")
   (emit-fn-header 'scheme_entry)
   (emit-preserve-regs)
   (emit "   movl %esp, %ecx # store esp temporarily")
@@ -92,6 +123,7 @@
   (emit "   call L_scheme_entry")
   (emit-restore-regs)
   (emit "   ret # return from scheme_entry")
+  (emit-global-proc*)
   )
 (define (emit-preserve-regs)
   (define (si-of-i i)
@@ -228,8 +260,7 @@
       ((emit-exp (- si wordsize) env #f) b))|#
     (define (emit-cmp op)
       (emit-biv)
-      ;(printf "emit-cmp:~s\n" op)
-      (emit "  cmpl ~s(%esp), %eax" si)
+      (emit "   cmpl ~s(%esp), %eax" si)
       (case op
         ['= (emit "   sete %al")]
         ['< (emit "   setg %al")]
@@ -269,6 +300,9 @@
         [>= (emit-cmp '>=)]
         [fx>= (emit-exp1 `(>= ,a ,b))]
         [cons (emit-cons a b)]
+        [eq?
+          ; simple treatment
+          (emit-exp1 `(= ,a ,b))]
         ))
     (define (report-not-found)
       (error 'emit-biop "~a is not a binary operator" op))
@@ -336,7 +370,8 @@
     (emit "# emit-vec-from-values end")
     )
   (define (emit-constant-ref v)
-    ...)
+    (emit-load-global-to-eax v)
+    (emit "   movl (%eax), %eax # constant-ref"))
   (define (emit-cons a d)
     (let ([new-si (emit-exps-push-all si env (list a d))])
       (emit-alloc-heap new-si
@@ -677,7 +712,7 @@
      ; size is the bytes to allocate
      (let ([aligned-size (bitwise-and (+ size (sub1 heap-align))
                                       (- heap-align))])
-       (emit "   movl $~s, %eax" aligned-size)
+       (emit "   movl $~s, %eax # aligned size to eax" aligned-size)
        (emit-alloc-heap1 si))]))
 
 #|(load "tests-1.3-req1.scm")

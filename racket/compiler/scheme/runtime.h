@@ -49,8 +49,8 @@ typedef struct {
 } context;
 
 typedef struct {
-  char* heap;
-  char* global;
+  char* heap; // heap pointer
+  char* global; // global pointer
   char* heap_base;
   char* heap_top;
   char* heap_base1;
