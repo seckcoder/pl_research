@@ -1,8 +1,3 @@
-set!
-set-car!
-set-cdr!
-loop-cyclic checking
-cond
 letrec
 let loop
 case
@@ -11,3 +6,4 @@ and
 when
 unless
 define
+loop-cyclic checking

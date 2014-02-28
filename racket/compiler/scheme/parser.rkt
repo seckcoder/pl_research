@@ -47,6 +47,23 @@
       (parse `(number? ,v))]
     [(list (? prim-op? op) v* ...)
      `(,op ,@(map parse v*))]
+    [`(cond (,pred* ,body*) ...)
+      (if (not (null? pred*))
+        (let ((pred (car pred*))
+              (body (car body*)))
+          (cond ((and (eq? pred 'else)
+                      (null? (cdr pred*)))
+                 (parse body))
+                ((eq? pred 'else)
+                 (error 'parse "cond else should be the last expression"))
+                (else
+                  (parse `(if ,pred
+                            ,body
+                            (cond ,@(map (lambda (pred body)
+                                           (list pred body))
+                                         (cdr pred*)
+                                         (cdr body*))))))))
+        (error 'parse "empty cond"))]
     [`(if ,test ,then ,else)
       `(if ,(parse test)
          ,(parse then)

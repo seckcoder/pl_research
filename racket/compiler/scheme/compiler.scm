@@ -868,5 +868,5 @@
 ;(load "tests-print.scm")
 ;(load "tests-proc.scm")
 ;(load "tests-constant.scm")
-(load "tests-1.9-req.scm") ; test begin, vector, string, set-car!/set-cdr!
+;(load "tests-1.9-req.scm") ; test begin, vector, string, set-car!/set-cdr!
 ;(load "tests-2.2-req.scm") ; test set!
