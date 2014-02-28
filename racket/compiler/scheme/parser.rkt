@@ -22,6 +22,16 @@
       (parse `(make-vec 0))]
     [`(make-string)
       (parse `(make-string 0))]
+    [`(set! ,v ,val)
+      `(set! ,v ,(parse val))]
+    [`(fxadd1 ,v)
+      `(fx+ ,v 1)]
+    [`(add1 ,v)
+      `(+ ,v 1)]
+    [`(fxsub1 ,v)
+      `(fx- ,v 1)]
+    [`(sub1 ,v)
+      `(- ,v 1)]
     [(list (? prim-op? op) v* ...)
      `(,op ,@(map parse v*))]
     [`(if ,test ,then ,else)
@@ -33,9 +43,11 @@
          ,(if (null? (cdr body*))
             (parse (car body*))
             (parse `(begin ,@body*))))]
-    [`(lambda (,v* ...) ,body)
+    [`(lambda (,v* ...) ,body* ...)
       `(lambda ,v*
-         ,(parse body))]
+         ,(if (null? (cdr body*))
+            (parse (car body*))
+            (parse `(begin ,@body*))))]
     [`(begin ,exp0 ,exp* ...)
       `(begin
          ,@(map parse (cons exp0 exp*)))]
@@ -56,3 +68,12 @@
       `(app ,(parse rator)
             ,@(map parse rand*))]
     [_ (error 'parse "failed:~s" x)]))
+
+(module+ test
+  (parse '(let ([f (lambda (x) 
+                     (set! x (fxadd1 x))
+                     x)])
+            (f 12)))
+  (parse '(lambda (x)
+            (set! x (fxadd1 x))
+            x)))
