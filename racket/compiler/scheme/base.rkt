@@ -121,7 +121,7 @@
 (define (prim-op? op)
   (or (unop? op)
       (biop? op)
-      (memq op '(print
+      (memq op '(print set!
                  make-vec vec-ref vec-set! vec
                  make-string string-ref string-set! string
                  make-symbol))))

@@ -6,9 +6,10 @@
          (prefix-in env: "env.rkt")
          "../../base/utils.rkt"
          "base.rkt"
-         "parser.rkt"
+         "macro-expand.rkt"
          "constants.rkt"
          "closure-conversion.rkt"
+         "alpha-conversion.rkt"
          "assign.rkt"
          "global.rkt")
 
@@ -16,11 +17,14 @@
   (closure-conversion e 'bottom-up))
 (define (assign-cvt e)
   (car (assign-conversion e)))
+(define (alpha-cvt e)
+  ((alpha-conversion (env:empty)) e))
 (define (compile-program x)
   (init-global!)
   (~> x
-      parse
+      macro-expand
       lift-constant
+      alpha-cvt
       assign-cvt
       clj-cvt
       emit-program))
@@ -868,5 +872,5 @@
 ;(load "tests-print.scm")
 ;(load "tests-proc.scm")
 ;(load "tests-constant.scm")
-;(load "tests-1.9-req.scm") ; test begin, vector, string, set-car!/set-cdr!
+(load "tests-1.9-req.scm") ; test begin, vector, string, set-car!/set-cdr!
 ;(load "tests-2.2-req.scm") ; test set!
