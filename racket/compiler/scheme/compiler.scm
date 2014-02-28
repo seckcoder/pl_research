@@ -18,6 +18,7 @@
   (~> x
       parse
       lift-constant
+      assign-conversion
       clj-cvt
       emit-program))
 
@@ -412,6 +413,9 @@
         (emit-stack->heap-by-char (- si (* i wordsize))
                                   (+ wordsize i)))
       (emit-add-strtag 'eax)))
+  (define (emit-make-symbol s)
+    ; make symbol from str
+    ...)
   (define (emit-constant-ref v)
     (emit-load-global-to-eax v)
     (emit "   movl (%eax), %eax # constant-ref"))
@@ -519,6 +523,8 @@
           (emit-string-set s i c)]
         [`(string ,c* ...)
           (emit-string-from-values c*)]
+        [`(make-symbol ,s)
+          (emit-make-symbol s)]
         [`(constant-ref ,v)
           (emit-constant-ref v)]
         [(list (? unop? op) v)

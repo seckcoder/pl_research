@@ -107,19 +107,11 @@
         (set-union u (free e)))
       (seteq)
       es)))
+
+
+; for v in e, if v is in fvs, then, subst
 (define subst
   (lambda (e env fvs)
-    (define (subst-clj-env clj-env)
-      (let loop ([fvs (hash-keys clj-env)]
-                 [clj-env clj-env])
-        (cond
-          [(null? fvs) clj-env]
-          [else
-            (loop (cdr fvs)
-                  (hash-set clj-env
-                            (car fvs)
-                            ; subst env value
-                            (subst1 (car fvs))))])))
     (define (subst1 e)
       (match e
         [(? immediate?) e]

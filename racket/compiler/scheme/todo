@@ -1,1 +1,13 @@
-indirect call
+set!
+set-car!
+set-cdr!
+loop-cyclic checking
+cond
+letrec
+let loop
+case
+or
+and
+when
+unless
+define

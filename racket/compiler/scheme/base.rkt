@@ -91,6 +91,7 @@
                                    number->char char->number
                                    fixnum?  number? char? null?
                                    boolean? not zero?
+                                   symbol? string?
                                    car cdr pair?
                                    print length
                                    constant-ref
@@ -118,7 +119,7 @@
       (memq op '(print
                  make-vec vec-ref vec-set! vec
                  make-string string-ref string-set! string
-                          ))))
+                 make-symbol))))
 
 (define (align size align-size)
   (bitwise-and (+ size (sub1 align-size))
