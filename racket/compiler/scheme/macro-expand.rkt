@@ -73,14 +73,26 @@
          ,(if (null? (cdr body*))
             (expand (car body*))
             (expand `(begin ,@body*))))]
+    [`(letrec ([,v* ,e*] ...) ,body* ...)
+      `(let ,(map (lambda (v)
+                    (list v #f)) v*)
+         ,(expand
+            `(begin
+               ,@(map (lambda (v e)
+                        `(set! ,v ,e))
+                      v* e*)
+               ,@body*)))]
+
     [`(lambda (,v* ...) ,body* ...)
       `(lambda ,v*
          ,(if (null? (cdr body*))
             (expand (car body*))
             (expand `(begin ,@body*))))]
     [`(begin ,exp0 ,exp* ...)
-      `(begin
-         ,@(map expand (cons exp0 exp*)))]
+      (if (null? exp*)
+        (expand exp0)
+        `(begin
+           ,@(map expand (cons exp0 exp*))))]
     [`(app-proc ,rator ,rand* ...)
       ; procedure call, for debug purpose
       x]
@@ -91,8 +103,8 @@
       ; procedure, for debug purpose
       x]
     [`(app ,rator ,rand* ...)
-      ; func call, for debug purpose
-      x]
+      (expand
+        `(,rator ,@rand*))]
     [`(,rator ,rand* ...)
       ; function call
       `(app ,(expand rator)
