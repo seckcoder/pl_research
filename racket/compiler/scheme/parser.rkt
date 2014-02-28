@@ -19,6 +19,14 @@
     [(? symbol?) x]
     [`(quote ,v)
       x]
+    [`(make-vector ,v* ...)
+      (parse `(make-vec ,@v*))]
+    [`(vector ,v* ...)
+      (parse `(vec ,@v*))]
+    [`(vector-set! ,v* ...)
+      (parse `(vec-set! ,@v*))]
+    [`(vector-ref ,v* ...)
+      (parse `(vec-ref ,@v*))]
     [`(make-vec)
       (parse `(make-vec 0))]
     [`(make-string)

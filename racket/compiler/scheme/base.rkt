@@ -91,11 +91,13 @@
                                            fixnum?  number? char? null?
                                            boolean? not
                                            fxzero? zero?
-                                           symbol? string?
+                                           symbol? string? vector?
                                            car cdr pair?
-                                           print length
+                                           print
                                            constant-ref
                                            string-length
+                                           vector-length
+                                           fixnum->char char->fixnum
                                            )))
 
 (define (biop? op)
@@ -110,7 +112,10 @@
               <= fx<=
               > fx>
               >= fx>=
+              char=
               eq?
+              set-car!
+              set-cdr!
               )))
 
 (define (prim-op? op)

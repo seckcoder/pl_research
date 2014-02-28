@@ -105,27 +105,35 @@ void print_vector(int* x) {
     printf("-->%u", (ptr)x);
   } else {
     int len = vector_length(x);
-    printf("%d: [", len);
+    printf("#(");
     int i = 0;
     for(i = 0; i < len; i++) {
       print_ptr_rec((ptr)(vector_ref(x, i)));
       assert(get_word(vector_pi(x, i)) == vector_ref(x,i));
       if (i < len-1) {
-        printf(", ");
+        printf(" ");
       }
     }
-    printf("]");
+    printf(")");
   }
 }
 
 void print_string(char* s) {
   unsigned int len = string_length(s);
   s += wordsize; // move to point to first char
-  char *c_str = (char*)malloc(len+1);
-  memcpy(c_str, s, len); // copy str content
-  c_str[len] = '\0'; // null terminated
-  printf("%s", c_str);
-  free(c_str);
+  int i = 0;
+  printf("\"");
+  for (i = 0; i < len; i++) {
+    char c = s[i];
+    if (c == '"' )  {
+      printf("\\\"");
+    } else if (c == '\\') {
+      printf("\\\\");
+    } else {
+      putchar(c);
+    }
+  }
+  printf("\"");
 }
 
 void print_ptr_rec(ptr x) {

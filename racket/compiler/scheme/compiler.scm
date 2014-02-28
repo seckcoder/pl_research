@@ -238,12 +238,28 @@
          (emit "   cmpb $~s, %al" pairtag)
          (emit "   sete %al")
          (emit-eax-0/1->bool)]
-        ['length
-         (emit-remove-vectag 'eax)
-         (emit "   movl (%eax), %eax # move vector length to eax")]
         ['string-length
          (emit-remove-strtag 'eax)
          (emit "   movl (%eax), %eax # move string length to eax")]
+        ['vector?
+         (emit "   andb $~s, %al" vecmask)
+         (emit "   cmpb $~s, %al" vectag)
+         (emit "   sete %al")
+         (emit-eax-0/1->bool)]
+        ['vector-length
+         (emit-remove-vectag 'eax)
+         (emit "   movl (%eax), %eax # move vec length to eax")]
+        ['string?
+         (emit "   andb $~s, %al" strmask)
+         (emit "   cmpb $~s, %al" strtag)
+         (emit "   sete %al")
+         (emit-eax-0/1->bool)]
+        ['fixnum->char
+         (emit-remove-fxtag 'eax)
+         (emit-add-chartag 'eax)]
+        ['char->fixnum
+         (emit-remove-chartag 'eax)
+         (emit-add-fxtag 'eax)]
         [_ (error 'emit-unop "~a is not an unary operator" op)]))
     (define (emit-biop op a b)
       (define (emit-*)
@@ -268,8 +284,8 @@
         ['<= (emit "  setge %al")]
         ['> (emit "   setl %al")]
         ['>= (emit "  setle %al")]
+        ['char= (emit "   sete %al")]
         [else (report-not-found)])
-      ;(printf "end of emit-cmp\n")
       (emit-eax-0/1->bool))
     (define op->emitter
       (biop-emit-pairs
@@ -300,10 +316,15 @@
         [fx> (emit-exp1 `(> ,a ,b))]
         [>= (emit-cmp '>=)]
         [fx>= (emit-exp1 `(>= ,a ,b))]
+        [char= (emit-cmp 'char=)]
         [cons (emit-cons a b)]
         [eq?
           ; simple treatment
           (emit-exp1 `(= ,a ,b))]
+        [set-car!
+          (emit-set-car! a b)]
+        [set-cdr!
+          (emit-set-cdr! a b)]
         ))
     (define (report-not-found)
       (error 'emit-biop "~a is not a binary operator" op))
@@ -375,7 +396,7 @@
     (emit "   movl %eax, ~s(%esp) # store str len" si)
     (emit-remove-fxtag 'eax)
     (emit-calc-string-size)
-    (emit-alloc-heap (- si wordsize) #f)
+    (emit-alloc-heap (- si wordsize) #t)
     (emit-stack->heap si 0) ; move length to heap
     (emit-add-strtag 'eax))
   (define (emit-string-ref s i)
@@ -424,6 +445,16 @@
       (emit-stack->heap si 0) ; move a to heap
       (emit-stack->heap (- si wordsize) wordsize) ; move d to heap
       (emit-add-pairtag 'eax)))
+  (define (emit-set-car! pair v)
+    (emit-exps-leave-last si env (list pair v))
+    (emit "   movl ~s(%esp), %ecx # get pair ptr" si)
+    (emit-remove-pairtag 'ecx)
+    (emit "   movl %eax, (%ecx) # set car"))
+  (define (emit-set-cdr! pair v)
+    (emit-exps-leave-last si env (list pair v))
+    (emit "   movl ~s(%esp), %ecx # get pair ptr" si)
+    (emit-remove-pairtag 'ecx)
+    (emit "   movl %eax, ~a(%ecx) # set cdr" wordsize))
   (define (emit-closure f rv)
     (emit "# emit-closure")
     ((emit-exp si env #f) rv)
@@ -552,6 +583,7 @@
               [(null? exps)
                (error 'begin "empty body")]
               [(null? (cdr exps))
+               (printf "~a\n" (car exps))
                (emit-exp1 (car exps))]
               [else
                 ((emit-exp si env #f) (car exps))
@@ -807,7 +839,9 @@
   (emit "   movl %ecx, ~s(%esp)" (- si wordsize))
   (emit "   movl %ebp, ~s(%esp) # mem to stack" (- si (* 2 wordsize)))
   (emit-foreign-call (- si (* 3 wordsize))
-                     'heap_alloc))
+                     'heap_alloc)
+  ;(emit "   movl ~s(%esp), %ebp # recover mem ptr" (- si (* 2 wordsize)))
+  )
 
 (define emit-alloc-heap
   (match-lambda*
@@ -833,6 +867,6 @@
 ;(load "tests-1.8-opt.scm") ; test pair
 ;(load "tests-print.scm")
 ;(load "tests-proc.scm")
-;(load "tests-vector.scm")
 ;(load "tests-constant.scm")
-(load "tests-2.2-req.scm") ; test set!
+(load "tests-1.9-req.scm") ; test begin, vector, string, set-car!/set-cdr!
+;(load "tests-2.2-req.scm") ; test set!
