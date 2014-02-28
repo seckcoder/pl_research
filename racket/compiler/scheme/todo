@@ -1,5 +1,4 @@
 syntax extending:
-    letrec
     let loop
     case
     or

@@ -98,6 +98,7 @@
                                            string-length
                                            vector-length
                                            fixnum->char char->fixnum
+                                           procedure?
                                            )))
 
 (define (biop? op)

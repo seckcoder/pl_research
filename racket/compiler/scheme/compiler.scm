@@ -264,21 +264,22 @@
         ['char->fixnum
          (emit-remove-chartag 'eax)
          (emit-add-fxtag 'eax)]
+        ['procedure?
+         (emit "   andb $~s, %al" cljmask)
+         (emit "   cmpb $~s, %al" cljtag)
+         (emit "   sete %al")
+         (emit-eax-0/1->bool)]
         [_ (error 'emit-unop "~a is not an unary operator" op)]))
     (define (emit-biop op a b)
-      (define (emit-*)
-        (emit-exp1 a)
-        (emit-remove-fxtag 'eax) ; remove fxtag so that it can be used in imull
-        (emit "  movl %eax, ~s(%esp)" si)
-        ((emit-exp (- si wordsize) env #f) b)
-        (emit-remove-fxtag 'eax)
-        (emit "  imull ~s(%esp), %eax" si) ; multiply two number
-        (emit-add-fxtag 'eax))
       (define (emit-biv)
         (emit-exps-leave-last si env (list a b)))
-      #|((emit-exp si env #f) a)
-      (emit "   movl %eax, ~s(%esp)" si); store a to stack
-      ((emit-exp (- si wordsize) env #f) b))|#
+      (define (emit-*)
+        (emit-biv)
+        (emit "   movl ~s(%esp), %ecx # get a" si)
+        (emit-remove-fxtag 'ecx)
+        (emit-remove-fxtag 'eax)
+        (emit "   imull %ecx, %eax # a * b")
+        (emit-add-fxtag 'eax))
     (define (emit-cmp op)
       (emit-biv)
       (emit "   cmpl ~s(%esp), %eax" si)
@@ -873,6 +874,7 @@
 ;(load "tests-proc.scm")
 ;(load "tests-constant.scm")
 ;(load "seck-tests.scm")
-(load "tests-1.8-req.scm")
+;(load "tests-1.8-req.scm")
 ;(load "tests-1.9-req.scm") ; test begin, vector, string, set-car!/set-cdr!
+(load "tests-2.1-req.scm") ; closure test
 ;(load "tests-2.2-req.scm") ; test set!
