@@ -9,16 +9,19 @@
          "parser.rkt"
          "constants.rkt"
          "closure-conversion.rkt"
+         "assign.rkt"
          "global.rkt")
 
 (define (clj-cvt e)
   (closure-conversion e 'bottom-up))
+(define (assign-cvt e)
+  (car (assign-conversion e)))
 (define (compile-program x)
   (init-global!)
   (~> x
       parse
       lift-constant
-      assign-conversion
+      assign-cvt
       clj-cvt
       emit-program))
 
@@ -188,10 +191,6 @@
     (define (emit-unop op v)
       ((emit-exp si env #f) v)
       (match op
-        ['add1 (emit "   addl $~s, %eax" (immediate-rep 1))]
-        ['$fxadd1 (emit-exp1 `(add1 ,v))]
-        ['sub1 (emit "   subl $~s, %eax" (immediate-rep 1))]
-        ['$fxsub1 (emit-exp1 `(sub1 ,v))]
         ['number->char
          ; shift left
          (emit "   shll $~s, %eax" (- charshift fxshift))
@@ -199,8 +198,6 @@
          (emit "   orl $~s, %eax" chartag)]
         ['char->number
          (emit "   sarl $~s, %eax" (- charshift fxshift))]
-        ['fixnum?
-         (emit-exp1 `(number? ,v))]
         ['number?
          (emit "   andb $~s, %al" fxmask)
          (emit "   cmpb $~s, %al" fxtag)
@@ -415,7 +412,8 @@
       (emit-add-strtag 'eax)))
   (define (emit-make-symbol s)
     ; make symbol from str
-    ...)
+    s
+    )
   (define (emit-constant-ref v)
     (emit-load-global-to-eax v)
     (emit "   movl (%eax), %eax # constant-ref"))
@@ -836,4 +834,5 @@
 ;(load "tests-print.scm")
 ;(load "tests-proc.scm")
 ;(load "tests-vector.scm")
-(load "tests-constant.scm")
+;(load "tests-constant.scm")
+(load "tests-2.2-req.scm") ; test set!

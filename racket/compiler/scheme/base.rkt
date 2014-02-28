@@ -87,16 +87,16 @@
     [_ (error 'immediate-rep "~a is not an immediate" x)]
     ))
 
-(define (unop? op) (memq op '(add1 $fxadd1 sub1 $fxsub1
-                                   number->char char->number
-                                   fixnum?  number? char? null?
-                                   boolean? not zero?
-                                   symbol? string?
-                                   car cdr pair?
-                                   print length
-                                   constant-ref
-                                   string-length
-                                   )))
+(define (unop? op) (memq op '(number->char char->number
+                                           fixnum?  number? char? null?
+                                           boolean? not
+                                           fxzero? zero?
+                                           symbol? string?
+                                           car cdr pair?
+                                           print length
+                                           constant-ref
+                                           string-length
+                                           )))
 
 (define (biop? op)
   (memq op '(cons

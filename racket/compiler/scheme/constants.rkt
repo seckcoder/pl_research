@@ -37,6 +37,8 @@
     [(? symbol?) e]
     [`(quote ,v)
       (transform-constant v)]
+    [`(set! ,v ,val)
+      `(set! ,v ,(lift val))]
     [(list (? prim-op? op) v* ...)
      `(,op ,@(map lift v*))]
     [`(if ,test ,then ,else)

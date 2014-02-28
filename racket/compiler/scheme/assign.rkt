@@ -4,7 +4,7 @@
 (provide (rename-out [convert assign-conversion]))
 
 
-; assignment conversion
+; assignment conversion(bottom-up)
 ; e -> (list e set)
 ; e -> (list converted-e unconverted-set!-vars)
 (define (convert e)
@@ -113,7 +113,7 @@
                  [`(constant-ref ,v) e]
                  [`(set! ,v ,e1)
                    (if (set-member? vars v)
-                     `(vec-set! ,v 0 ,e1)
+                     `(vec-set! ,v 0 ,(subst1 e1))
                      e)]
                  [(list (? prim-op? op) v* ...)
                   `(,op ,@(map subst1 v*))]

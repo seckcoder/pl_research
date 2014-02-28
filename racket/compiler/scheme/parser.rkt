@@ -1,5 +1,6 @@
 #lang racket
 
+; a temporary implementation of parser
 (require "base.rkt")
 
 (provide parse)
@@ -25,13 +26,17 @@
     [`(set! ,v ,val)
       `(set! ,v ,(parse val))]
     [`(fxadd1 ,v)
-      `(fx+ ,v 1)]
+      (parse `(fx+ ,v 1))]
     [`(add1 ,v)
-      `(+ ,v 1)]
+      (parse `(+ ,v 1))]
     [`(fxsub1 ,v)
-      `(fx- ,v 1)]
+      (parse `(fx- ,v 1))]
     [`(sub1 ,v)
-      `(- ,v 1)]
+      (parse `(- ,v 1))]
+    [`(fxzero? ,v)
+      (parse `(zero? ,v))]
+    [`(fixnum? ,v)
+      (parse `(number? ,v))]
     [(list (? prim-op? op) v* ...)
      `(,op ,@(map parse v*))]
     [`(if ,test ,then ,else)
