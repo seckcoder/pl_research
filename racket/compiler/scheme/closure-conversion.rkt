@@ -108,6 +108,11 @@
       (seteq)
       es)))
 
+(define (list-subtract l1 l2)
+  (set->list
+    (set-subtract
+      (list->seteq l1)
+      (list->seteq l2))))
 
 ; for v in e, if v is in fvs, then, subst
 (define subst
@@ -132,15 +137,13 @@
              ,(subst1 else))]
         [`(let ((,v* ,e*) ...) ,body)
           `(let ,(map list v* (map subst1 e*))
-             ,(subst body env (set-subtract fvs
-                                            (list->seteq v*))))]
+             ,(subst body env (list-subtract fvs v*)))]
         [`(begin ,exp* ...)
           `(begin
-             ,@(map subst exp*))]
+             ,@(map subst1 exp*))]
         [`(lambda (,v* ...) ,body)
           `(lambda ,v*
-             ,(subst body env (set-subtract fvs
-                                            (list->seteq v*))))]
+             ,(subst body env (list-subtract fvs v*)))]
         [`(closure ,f ,rv)
           `(closure ,f
                     ,(subst1 rv))]
