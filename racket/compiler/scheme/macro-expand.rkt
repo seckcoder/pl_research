@@ -8,7 +8,15 @@
 (define (expand x [boundvars (seteq)])
   (let ([expand-with-boundvars
           (lambda (e)
-            (expand e boundvars))])
+            (expand e boundvars))]
+        [lambda-args
+          (lambda (vs)
+            (match vs
+              [(list-rest a ... d)
+               (list a d)]
+              [(? symbol? v)
+               (list '() v)]
+              [_ (error 'lambda "wrong format of arguments")]))])
     (match x
       [(? immediate?) x]
       [(? string?) x]
@@ -39,6 +47,9 @@
         (expand-with-boundvars `(zero? ,v))]
       [`(fixnum? ,v)
         (expand-with-boundvars `(number? ,v))]
+      [`(list ,v* ...)
+        (expand-with-boundvars
+          (expand-list v*))]
       [(list (? prim-op? op) v* ...)
        `(,op ,@(map expand-with-boundvars v*))]
       [(? let*-e?)
@@ -78,14 +89,16 @@
       [(? unless-e?)
         (expand-with-boundvars
           (expand-unless x boundvars))]
-      [`(lambda (,v* ...) ,body* ...)
-        `(lambda ,v*
-           ,(let ([new-bound-vars (set-union boundvars (list->seteq v*))])
-              (expand
-                `(begin
-                   ,@body*)
-                new-bound-vars
-                )))]
+      [`(lambda ,vs ,body* ...)
+        (match (lambda-args vs)
+          [(list vs rest)
+           `(lambda ,vs ,rest
+              ,(let ([new-bound-vars
+                       (set-union boundvars (lambda-args->set vs rest))])
+                 (expand
+                   `(begin
+                      ,@body*)
+                   new-bound-vars)))])]
       [`(begin ,exp0 ,exp* ...)
         (if (null? exp*)
           (expand-with-boundvars exp0)
@@ -256,6 +269,13 @@
            ,@else*))]
     [_ (error 'unless "~a is not matched" e)]))
 
+(define (expand-list lst)
+  (if (null? lst)
+    '()
+    `(cons
+       ,(car lst)
+       ,(expand-list (cdr lst)))))
+
 (module+ test
   (expand '(let ([f (lambda (x) 
                      (set! x (fxadd1 x))
@@ -269,4 +289,6 @@
   (expand '(let ([=> 12])
              (cond
                [=> => =>])))
+
+  (expand '(list a b c))
   )

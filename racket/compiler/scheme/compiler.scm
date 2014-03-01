@@ -31,20 +31,59 @@
 
 (define (emit-global-proc n code)
   (match code
-    [`(proc (,v* ...) ,body)
-      (emit-fn-header n)
-      (let* ([v*-num (length v*)]
-             [env (env:init v*
-                            (range (- wordsize)
-                                   (- wordsize)
-                                   (- (* v*-num wordsize))))])
-        ((emit-exp (- (- (* v*-num wordsize))
-                      wordsize)
-                   env
-                   #t) body)
-        (emit "   ret")
-        )]
+    [`(proc ,v* ,rest ,body)
+      (if (null? rest)
+        (emit-proc-novararity n v* body)
+        (emit-proc-vararity n v* rest body))]
     [_ (void)]))
+
+(define (emit-proc-novararity n v* body)
+  (emit-fn-header n)
+  (let* ([v*-num (length v*)]
+         [bind-args (lambda ()
+                      (list (- (- (* v*-num wordsize))
+                               wordsize)
+                            (env:init v*
+                                      (range (- wordsize)
+                                             (- wordsize)
+                                             (- (* v*-num wordsize))))))])
+    (match bind-args
+      [(list si env)
+       ((emit-exp si env #t) body)
+       (emit "   ret")])
+    ))
+
+(define (emit-proc-vararity n v* rest body)
+  (emit-fn-header n)
+  (letrec
+    ([bind-args (lambda ()
+                  (bind-v* (- wordsize) v* (env:empty)))]
+     [bind-v* (lambda (si v* env)
+                (cond
+                  [(null? v*)
+                   (bind-rest si env)]
+                  [else
+                    (bind-v*
+                      (- si wordsize)
+                      (cdr v*)
+                      (env:ext env (car v*) si))]))]
+     [bind-rest (lambda (si env)
+                  (emit "   subl $~s, %eax # get the length of rest list"
+                        (length v*))
+                  (emit-list-stack->heap si)
+                  (list (- si wordsize) (env:ext env rest si)))])
+    (match (bind-args)
+      [(list si env)
+       ((emit-exp si env #t) body)
+       (emit "   ret")])))
+
+; %eax store the list length, si(%esp) points
+; to the first element
+; return result(pointer to the list on heap)
+; should be put in si(%esp)
+(define (emit-list-stack->heap si)
+  (emit "   movl $~s, %edi" si)
+  (emit "   addl 
 
 (define (emit-global-constant n code)
   (match code
@@ -72,16 +111,10 @@
   (emit "   movl ~a, %eax" v))
 
 (define (global-proc? code)
-  (match code
-    [`(proc (,v* ...) ,body)
-      #t]
-    [_ #f]))
+  (tagged-list? code 'proc))
 
 (define (global-constant? code)
-  (match code
-    [`(datum ,v)
-      #t]
-    [_ #f]))
+  (tagged-list? code 'datum))
 
 (define (emit-global-proc*)
   (for-each
@@ -882,5 +915,6 @@
 ;(load "tests-2.1-req.scm") ; closure test
 ;(load "tests-2.2-req.scm") ; test set!
 ;(load "tests-2.3-req.scm") ; test constants
-(load "tests-2.4-req.scm")
+;(load "tests-2.4-req.scm")
+(load "tests-2.6-req.scm")
 ;(load "seck-tests.scm")

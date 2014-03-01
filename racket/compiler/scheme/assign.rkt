@@ -60,17 +60,16 @@
     [`(labels ((,v* ,e*) ...) ,exp)
       ; for debuggin purpose
       e]
-    [`(lambda (,v* ...) ,body)
+    [`(lambda ,v* ,rest ,body)
       (match (convert body)
         [(list body body-set!-vars)
-         (let ([free-set!-vars-in-body
-                 (set-subtract body-set!-vars
-                               (list->seteq v*))]
-               [bound-set!-vars-in-body
-                 (set-intersect body-set!-vars
-                                (list->seteq v*))])
+         (let* ([arg-set (lambda-args->set v* rest)]
+                [free-set!-vars-in-body
+                  (set-subtract body-set!-vars arg-set)]
+                [bound-set!-vars-in-body
+                  (set-intersect body-set!-vars arg-set)])
            (list
-             `(lambda ,v*
+             `(lambda ,v* ,rest
                 ,(if (set-empty? bound-set!-vars-in-body)
                    body
                    `(let ,(for/list ([v (set->list bound-set!-vars-in-body)])
@@ -130,10 +129,11 @@
                  [`(labels ((,v* ,e*) ...) ,exp)
                    ; for debugging purpose
                    e]
-                 [`(lambda (,v* ...) ,body)
-                   `(lambda ,v*
-                      ,(subst body
-                              (set-subtract vars (list->seteq v*))))]
+                 [`(lambda ,v* ,rest ,body)
+                   (let ([args-set (lambda-args->set v* rest)])
+                     `(lambda ,v*
+                        ,(subst body
+                                (set-subtract vars args-set))))]
                  [`(app ,rator ,rand* ...)
                    `(app ,(subst1 rator)
                          ,@(map subst1 rand*))]
@@ -145,7 +145,8 @@
   (pretty-write
     (car
       (convert '(let ((f (lambda (c)
-                           (cons (lambda (v) (set! c v))
+                           (cons (lambda (v) '()
+                                   (set! c v))
                                  (lambda () c)))))
                   (let ((p (app f 0)))
                     (app (car p) 12)))))))

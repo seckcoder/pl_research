@@ -14,11 +14,12 @@ It contains or will contain:
 - compiler
   * seck-scheme: a scheme compiler that compiles to x86
     - basic data type: fixnumber, char, bool, string, vector
-    - closure support
+    - closure conversion
     - tail call optimization
     - GC
     - global constant
     - alpha conversion
+    - assignment conversion
     - TODO
       * Big number
       * Macro system, pattern matching and module system.

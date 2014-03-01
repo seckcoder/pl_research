@@ -1,3 +1,4 @@
+variable-arity procedures
 syntax extending:
     let loop
     case
@@ -6,7 +7,6 @@ passing value of primitives
 library primitives
 foreign function calling
 error checking
-variable-arity procedures
 apply
 IO
 loop-cyclic checking

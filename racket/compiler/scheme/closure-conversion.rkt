@@ -7,14 +7,15 @@
 (provide closure-conversion)
 (define (closure-conversion e dir)
   (letrec ([cvt1 (lambda (e)
+                   ; convert lambda to closure
                    (match e
-                     [`(lambda (,v* ...) ,body)
+                     [`(lambda ,v* ,rest ,body)
                        (let ([fvs (set->list (free e))]
                              [proc-n (gensym 'proc_)]
                              [r (gensym 'env)])
                          (add-global!
                            proc-n
-                           `(proc ,(cons r v*)
+                           `(proc ,(cons r v*) ,rest
                                   ,(subst body r fvs)))
                          `(closure ,proc-n
                                    (vec ,@fvs)))]
@@ -47,8 +48,8 @@
                          [`(labels ((,v* ,e*) ...) ,exp)
                            ; for debugging purpose
                            e]
-                         [`(lambda (,v* ...) ,body)
-                           `(lambda ,v*
+                         [`(lambda ,v* ,rest ,body)
+                           `(lambda ,v* ,rest
                               ,(cvt-up body))]
                          [`(app ,rator ,rand* ...)
                            (let ([rator (cvt-up rator)]
@@ -89,9 +90,9 @@
                                  (list->seteq v*)))]
       [`(begin ,exp* ...)
         (free-U exp*)]
-      [`(lambda (,v* ...) ,body)
-        (set-subtract (free body)
-                      (list->seteq v*))]
+      [`(lambda ,v* ,rest ,body)
+        (let ([args-set (lambda-args->set v* rest)])
+          (set-subtract (free body) args-set))]
       [`(closure ,f ,rv)
         (free rv)]
       [`(app ,rator ,rand* ...)
@@ -108,24 +109,23 @@
       (seteq)
       es)))
 
-(define (list-subtract l1 l2)
-  (set->list
-    (set-subtract
-      (list->seteq l1)
-      (list->seteq l2))))
-
 ; for v in e, if v is in fvs, then, subst
 (define subst
-  (lambda (e env fvs)
+  (lambda (e env fvs [bound-vars (seteq)])
     (define (subst1 e)
       (match e
         [(? immediate?) e]
         [(? string?) e]
         [(? symbol? v)
-         (let ([idx (index-of fvs v)])
-           (if (>= idx 0)
-             `(vec-ref ,env ,idx)
-             v))]
+         (cond
+           [(set-member? bound-vars v)
+            ; v is not free
+            v]
+           [else
+             (let ([idx (index-of fvs v)])
+               (if (>= idx 0)
+                 `(vec-ref ,env ,idx)
+                 v))])]
         [`(constant-ref ,v)
           ; don't replace constant-ref
           e]
@@ -137,13 +137,15 @@
              ,(subst1 else))]
         [`(let ((,v* ,e*) ...) ,body)
           `(let ,(map list v* (map subst1 e*))
-             ,(subst body env (list-subtract fvs v*)))]
+             ,(subst body env fvs (set-union bound-vars
+                                             (list->seteq v*))))]
         [`(begin ,exp* ...)
           `(begin
              ,@(map subst1 exp*))]
-        [`(lambda (,v* ...) ,body)
-          `(lambda ,v*
-             ,(subst body env (list-subtract fvs v*)))]
+        [`(lambda ,vs ,rest ,body)
+          `(lambda ,vs ,rest
+             ,(subst body env fvs (set-union bound-vars
+                                             (lambda-args->set vs rest))))]
         [`(closure ,f ,rv)
           `(closure ,f
                     ,(subst1 rv))]
@@ -156,57 +158,50 @@
         ))
     (subst1 e)))
 
-(define (env-from-fvs fvs)
-  (make-immutable-hasheq
-    (map
-      (lambda (x)
-        (cons x x))
-      (set->list fvs))))
-
-
 (module+ test
   (define (test-bottom-up e)
+    (init-global!)
     (pretty-write e)
     (printf "--------->\n")
     (pretty-write
-      (closure-conversion
-        e
-        'bottom-up))
+      (let ([e (closure-conversion e 'bottom-up)])
+        (rep-global*
+          (lambda () e))))
     (newline))
   (test-bottom-up
     '(app
-       (lambda (x)
+       (lambda (x) '()
          (+ x y)) u))
 
   (test-bottom-up
-    '(lambda (v)
+    '(lambda (v) '()
        (app
-         (lambda (x)
+         (lambda (x) '()
            (+ x v)) u)))
 
   (test-bottom-up
-    '(let ([f (lambda (v)
+    '(let ([f (lambda (v) '()
                 (+ v u))])
        (app f 3)))
 
   (test-bottom-up
-    ; Notice value:u
-    '(lambda (v)
+     ;Notice value:u
+    '(lambda (v) ()
        (app
-         (lambda (x)
+         (lambda (x) '()
            (+ x u)) v)))
 
   (test-bottom-up
-    ; A multi-arg version
-    '(lambda (v)
+     ;A multi-arg version
+    '(lambda (v) '()
        (app
-         (lambda (x)
+         (lambda (x) '()
            (+ (+ x u)
               w)) v)))
 
   (test-bottom-up
     '(let ([v 3])
        (app
-         (lambda (u)
-          (+ v u)) v)))
+         (lambda (u) '()
+           (+ v u)) v)))
   )

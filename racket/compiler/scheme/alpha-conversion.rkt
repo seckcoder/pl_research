@@ -32,31 +32,40 @@
                  [`(begin ,exp* ...)
                    `(begin
                       ,@(map cvt exp*))]
-                 [`(lambda (,v* ...) ,body)
-                   (match (cvt-vars v* env)
+                 [`(lambda ,vs ,rest ,body)
+                   (match (cvt-vars vs env)
                      [(list v* env)
-                      `(lambda ,v*
-                         ,((convert env) body))])]
+                      (match (cvt-rest rest env)
+                        [(list rest env)
+                         `(lambda ,v* ,rest
+                            ,((convert env) body))])])]
                  [`(app ,rator ,rand* ...)
                    `(app ,(cvt rator)
                          ,@(map cvt rand*))]
                  [_
                    (error 'alpha-conversion
                           "~a not match" e)]))]
+           [cvt-var
+             (lambda (v env)
+               (let ([new-v (genvar v)])
+                 (list new-v (env:ext env v new-v))))]
+           [cvt-rest
+             (lambda (rest env)
+               (if (null? rest)
+                 (list rest env)
+                 (cvt-var rest env)))]
            [cvt-vars
              (lambda (vs env)
                (let loop ([new-vs '()]
                           [vs vs]
                           [env env])
                  (if (null? vs)
-                   (list (reverse new-vs)
-                         env)
-                   (let ([new-v (genvar (car vs))])
-                     (loop (cons new-v new-vs)
-                           (cdr vs)
-                           (env:ext env
-                                    (car vs)
-                                    new-v))))))])
+                   (list (reverse new-vs) env)
+                   (match (cvt-var (car vs) env)
+                     [(list v env)
+                      (loop (cons v new-vs)
+                            (cdr vs)
+                            env)]))))])
     (lambda (e)
       (cvt e))))
 
@@ -64,6 +73,6 @@
 (module+ test
   (define (test-alpha-conversion e)
     ((convert (env:empty)) e))
-  (test-alpha-conversion '(lambda (v)
+  (test-alpha-conversion '(lambda (v) '()
                             (cons v v)))
   )

@@ -56,8 +56,8 @@
     [`(labels ((,v* ,e*) ...) ,exp)
       ; for debugging purpose
       e]
-    [`(lambda (,v* ...) ,body)
-      `(lambda ,v*
+    [`(lambda ,vs ,rest ,body)
+      `(lambda ,vs ,rest
          ,(lift body))]
     [`(app ,rator ,rand* ...)
       (let ([rator (lift rator)]

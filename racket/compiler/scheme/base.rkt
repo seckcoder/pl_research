@@ -123,7 +123,7 @@
 (define (prim-op? op)
   (or (unop? op)
       (biop? op)
-      (memq op '(print set! void
+      (memq op '(print set! void list
                  make-vec vec-ref vec-set! vec
                  make-string string-ref string-set! string
                  make-symbol))))
@@ -134,3 +134,15 @@
 
 (define (align-heap-size size)
   (align size heap-align))
+
+(define (tagged-list? l tag)
+  (and (pair? l)
+       (eq? (car l) tag)))
+
+(define (lambda-e? e)
+  (tagged-list? e 'lambda))
+(define lambda-args->set
+  (lambda (vs rest)
+    (if (null? rest)
+      (list->seteq vs)
+      (set-add (list->seteq vs) rest))))
