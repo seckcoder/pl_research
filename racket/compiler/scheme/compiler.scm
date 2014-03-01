@@ -876,5 +876,6 @@
 ;(load "seck-tests.scm")
 ;(load "tests-1.8-req.scm")
 ;(load "tests-1.9-req.scm") ; test begin, vector, string, set-car!/set-cdr!
-(load "tests-2.1-req.scm") ; closure test
+;(load "tests-2.1-req.scm") ; closure test
 ;(load "tests-2.2-req.scm") ; test set!
+(load "tests-2.3-req.scm")

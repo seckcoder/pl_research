@@ -10,6 +10,8 @@
   (match v
     [(? immediate?) v]
     [(? string?) v]
+    [(vector v* ...)
+     `(vec ,@v*)]
     [`(quote ,v)
       (error 'quote "quote in quote not handled")]
     [(? symbol?)
@@ -19,7 +21,9 @@
      ; complex constant
      (let ([n (gensym 'c)])
         (add-global! n `(datum ,(list->pair v)))
-        `(constant-ref ,n))]))
+        `(constant-ref ,n))]
+    [_ (error 'transform-constant "~a is not matched" v)]
+    ))
 
 ;(provide list->pair)
 (define (list->pair l)
