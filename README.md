@@ -17,6 +17,8 @@ It contains or will contain:
     - closure support
     - tail call optimization
     - GC
+    - global constant
+    - alpha conversion
     - TODO
       * Big number
       * Macro system, pattern matching and module system.
