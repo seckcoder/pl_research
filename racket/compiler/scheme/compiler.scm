@@ -440,6 +440,8 @@
     ; make symbol from str
     s
     )
+  (define (emit-void)
+    (emit "   movl $~s, %eax" void-v))
   (define (emit-constant-ref v)
     (emit-load-global-to-eax v)
     (emit "   movl (%eax), %eax # constant-ref"))
@@ -561,6 +563,8 @@
           (emit-make-symbol s)]
         [`(constant-ref ,v)
           (emit-constant-ref v)]
+        [`(void ,v* ...)
+          (emit-void)]
         [(list (? unop? op) v)
          (emit-unop op v)]
         [(list (? biop? op) a b)
@@ -873,9 +877,10 @@
 ;(load "tests-print.scm")
 ;(load "tests-proc.scm")
 ;(load "tests-constant.scm")
-;(load "seck-tests.scm")
 ;(load "tests-1.8-req.scm")
 ;(load "tests-1.9-req.scm") ; test begin, vector, string, set-car!/set-cdr!
 ;(load "tests-2.1-req.scm") ; closure test
 ;(load "tests-2.2-req.scm") ; test set!
-(load "tests-2.3-req.scm")
+;(load "tests-2.3-req.scm") ; test constants
+(load "tests-2.4-req.scm")
+;(load "seck-tests.scm")

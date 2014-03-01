@@ -2,8 +2,9 @@
 #define fxshift 2
 #define fxmask 0x03
 #define bool_f 0x2F
-#define bool_t 0x6F
-#define null_v 0x3F
+#define bool_t 0x3F
+#define null_v 0x4F
+#define void_v 0x6F
 #define wordsize 4
 #define fx_tag 0x00
 #define objshift 3

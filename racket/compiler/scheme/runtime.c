@@ -49,6 +49,10 @@ int is_null(ptr x) {
   return x == null_v;
 }
 
+int is_void(ptr x) {
+  return x == void_v;
+}
+
 int is_pair(ptr x) {
   return (x & pairmask) == pair_tag;
 }
@@ -83,6 +87,10 @@ int is_heap_ptr(ptr x) {
 
 void print_null() {
   printf("()");
+}
+
+void print_void() {
+  // ignore
 }
 
 void print_ptr_rec(ptr x);
@@ -146,6 +154,8 @@ void print_ptr_rec(ptr x) {
     printf("#t");
   } else if (is_null(x)) {
     print_null();
+  } else if (is_void(x)) {
+    print_void();
   } else if (is_char(x)) {
     printf("%s", beautify(to_char(x)));
   } else if (is_pair(x)) {

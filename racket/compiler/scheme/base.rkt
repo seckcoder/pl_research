@@ -6,8 +6,9 @@
 (define fxmask #x03)
 (define fxtag #x00)
 (define bool-f #x2F)
-(define bool-t #x6F)
-(define null_v #x3F)
+(define bool-t #x3F)
+(define null-v #x4F)
+(define void-v #x6F)
 (define charmask #xFF)
 (define chartag #x0F)
 (define charshift 8)
@@ -83,7 +84,7 @@
     [(? char?)
      (+ (arithmetic-shift (char->integer x) charshift)
         chartag)]
-    ['() null_v]
+    ['() null-v]
     [_ (error 'immediate-rep "~a is not an immediate" x)]
     ))
 
@@ -122,7 +123,7 @@
 (define (prim-op? op)
   (or (unop? op)
       (biop? op)
-      (memq op '(print set!
+      (memq op '(print set! void
                  make-vec vec-ref vec-set! vec
                  make-string string-ref string-set! string
                  make-symbol))))
