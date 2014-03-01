@@ -1,10 +1,6 @@
 syntax extending:
     let loop
     case
-    or
-    and
-    when
-    unless
     define
 passing value of primitives
 library primitives
