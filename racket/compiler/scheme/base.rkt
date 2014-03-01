@@ -6,8 +6,9 @@
 (define fxmask #x03)
 (define fxtag #x00)
 (define bool-f #x2F)
-(define bool-t #x6F)
-(define null_v #x3F)
+(define bool-t #x3F)
+(define null-v #x4F)
+(define void-v #x6F)
 (define charmask #xFF)
 (define chartag #x0F)
 (define charshift 8)
@@ -35,8 +36,7 @@
 (define strtag #x06)
 (define heap-align 8)
 
-; offset of heap, global
-(define heap-offset 0)
+; offset of global
 (define global-offset 4)
 
 (define registers
@@ -71,7 +71,6 @@
       (boolean? x)
       (char? x)
       (null? x)
-      (string? x)
       ))
 
 (define (immediate-rep x)
@@ -85,17 +84,23 @@
     [(? char?)
      (+ (arithmetic-shift (char->integer x) charshift)
         chartag)]
-    ['() null_v]
+    ['() null-v]
     [_ (error 'immediate-rep "~a is not an immediate" x)]
     ))
 
-(define (unop? op) (memq op '(add1 $fxadd1 sub1 $fxsub1
-                                   number->char char->number
-                                   fixnum?  number? char? null?
-                                   boolean? not zero?
-                                   car cdr pair?
-                                   print length
-                                   )))
+(define (unop? op) (memq op '(number->char char->number
+                                           fixnum?  number? char? null?
+                                           boolean? not
+                                           fxzero? zero?
+                                           symbol? string? vector?
+                                           car cdr pair?
+                                           print
+                                           constant-ref
+                                           string-length
+                                           vector-length
+                                           fixnum->char char->fixnum
+                                           procedure?
+                                           )))
 
 (define (biop? op)
   (memq op '(cons
@@ -109,11 +114,23 @@
               <= fx<=
               > fx>
               >= fx>=
+              char=
+              eq?
+              set-car!
+              set-cdr!
               )))
 
 (define (prim-op? op)
   (or (unop? op)
       (biop? op)
-      (memq op '(make-vec vec-ref vec-set! vec
-                          print))))
+      (memq op '(print set! void
+                 make-vec vec-ref vec-set! vec
+                 make-string string-ref string-set! string
+                 make-symbol))))
 
+(define (align size align-size)
+  (bitwise-and (+ size (sub1 align-size))
+               (- align-size)))
+
+(define (align-heap-size size)
+  (align size heap-align))

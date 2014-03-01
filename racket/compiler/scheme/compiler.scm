@@ -6,22 +6,33 @@
          (prefix-in env: "env.rkt")
          "../../base/utils.rkt"
          "base.rkt"
-         "parser.rkt"
+         "macro-expand.rkt"
+         "constants.rkt"
          "closure-conversion.rkt"
+         "alpha-conversion.rkt"
+         "assign.rkt"
          "global.rkt")
 
+(define (clj-cvt e)
+  (closure-conversion e 'bottom-up))
+(define (assign-cvt e)
+  (car (assign-conversion e)))
+(define (alpha-cvt e)
+  ((alpha-conversion (env:empty)) e))
 (define (compile-program x)
   (init-global!)
   (~> x
-      parse
-      (lambda (e)
-        (closure-conversion e 'bottom-up))
+      macro-expand
+      lift-constant
+      ;alpha-cvt
+      assign-cvt
+      clj-cvt
       emit-program))
 
-(define (emit-global n code)
+(define (emit-global-proc n code)
   (match code
     [`(proc (,v* ...) ,body)
-      (emit "~s:" n)
+      (emit-fn-header n)
       (let* ([v*-num (length v*)]
              [env (env:init v*
                             (range (- wordsize)
@@ -33,13 +44,59 @@
                    #t) body)
         (emit "   ret")
         )]
+    [_ (void)]))
+
+(define (emit-global-constant n code)
+  (match code
+    [`(datum ,v)
+      (emit "# global constant")
+      (emit "   .local ~a" n)
+      (emit "   .comm ~a,~a,~a" n wordsize wordsize)
+      ((emit-exp (- wordsize)
+                 (env:empty)
+                 #t) v)
+      (emit-save-eax-to-global)
+      (emit "   movl %eax, ~a # move global constant pointer value" n)]
+    [_ (void)]
     ))
 
-(define (emit-global*)
+(define (emit-save-eax-to-global)
+  ; save eax register value to global memory,
+  ; so that the value pointed by it can be handled by garbage collection
+  (emit "   movl ~a(%ebp), %ecx # fetch global pointer" global-offset)
+  (emit "   movl %eax, (%ecx) # save eax to global memory")
+  (emit "   addl $~a, ~a(%ebp) # increase global pointer" wordsize global-offset)
+  (emit "   movl %ecx, %eax # return global pointer as result"))
+
+(define (emit-load-global-to-eax v)
+  (emit "   movl ~a, %eax" v))
+
+(define (global-proc? code)
+  (match code
+    [`(proc (,v* ...) ,body)
+      #t]
+    [_ #f]))
+
+(define (global-constant? code)
+  (match code
+    [`(datum ,v)
+      #t]
+    [_ #f]))
+
+(define (emit-global-proc*)
   (for-each
     (match-lambda
-      [(list n code)
-       (emit-global n code)])
+      [(list n (? global-proc? code))
+       (emit-global-proc n code)]
+      [_ (void)])
+    *global*))
+
+(define (emit-global-constant*)
+  (for-each
+    (match-lambda
+      [(list n (? global-constant? code))
+       (emit-global-constant n code)]
+      [_ (void)])
     *global*))
 ; lift lambda
 (define-syntax def-lifted-lambda
@@ -50,14 +107,15 @@
                 `(proc (v* ...) body))]))
 
 (define (emit-program x)
+  (print x)(newline)
   (emit "   .text")
   ; We need L_scheme_entry since we need to make sure that when starting
   ; to emit-exp, the value above %esp is a return address. Otherwise,
   ; the tail-optimization will not work.
   (emit-fn-header 'L_scheme_entry)
+  (emit-global-constant*)
   ((emit-exp (- wordsize) (env:empty) #t) x)
   (emit "   ret # ret from L_scheme_entry") ; if program is tail-optimized, ret will be ignored
-  ;(emit "   ret")
   (emit-fn-header 'scheme_entry)
   (emit-preserve-regs)
   (emit "   movl %esp, %ecx # store esp temporarily")
@@ -73,7 +131,7 @@
   (emit "   call L_scheme_entry")
   (emit-restore-regs)
   (emit "   ret # return from scheme_entry")
-  ;(emit-global-proc*)
+  (emit-global-proc*)
   )
 (define (emit-preserve-regs)
   (define (si-of-i i)
@@ -137,10 +195,6 @@
     (define (emit-unop op v)
       ((emit-exp si env #f) v)
       (match op
-        ['add1 (emit "   addl $~s, %eax" (immediate-rep 1))]
-        ['$fxadd1 (emit-exp1 `(add1 ,v))]
-        ['sub1 (emit "   subl $~s, %eax" (immediate-rep 1))]
-        ['$fxsub1 (emit-exp1 `(sub1 ,v))]
         ['number->char
          ; shift left
          (emit "   shll $~s, %eax" (- charshift fxshift))
@@ -148,8 +202,6 @@
          (emit "   orl $~s, %eax" chartag)]
         ['char->number
          (emit "   sarl $~s, %eax" (- charshift fxshift))]
-        ['fixnum?
-         (emit-exp1 `(number? ,v))]
         ['number?
          (emit "   andb $~s, %al" fxmask)
          (emit "   cmpb $~s, %al" fxtag)
@@ -190,36 +242,55 @@
          (emit "   cmpb $~s, %al" pairtag)
          (emit "   sete %al")
          (emit-eax-0/1->bool)]
-        ['length
+        ['string-length
+         (emit-remove-strtag 'eax)
+         (emit "   movl (%eax), %eax # move string length to eax")]
+        ['vector?
+         (emit "   andb $~s, %al" vecmask)
+         (emit "   cmpb $~s, %al" vectag)
+         (emit "   sete %al")
+         (emit-eax-0/1->bool)]
+        ['vector-length
          (emit-remove-vectag 'eax)
-         (emit "   movl (%eax), %eax # move vector length to eax")]
+         (emit "   movl (%eax), %eax # move vec length to eax")]
+        ['string?
+         (emit "   andb $~s, %al" strmask)
+         (emit "   cmpb $~s, %al" strtag)
+         (emit "   sete %al")
+         (emit-eax-0/1->bool)]
+        ['fixnum->char
+         (emit-remove-fxtag 'eax)
+         (emit-add-chartag 'eax)]
+        ['char->fixnum
+         (emit-remove-chartag 'eax)
+         (emit-add-fxtag 'eax)]
+        ['procedure?
+         (emit "   andb $~s, %al" cljmask)
+         (emit "   cmpb $~s, %al" cljtag)
+         (emit "   sete %al")
+         (emit-eax-0/1->bool)]
         [_ (error 'emit-unop "~a is not an unary operator" op)]))
     (define (emit-biop op a b)
-      (define (emit-*)
-        (emit-exp1 a)
-        (emit-remove-fxtag 'eax) ; remove fxtag so that it can be used in imull
-        (emit "  movl %eax, ~s(%esp)" si)
-        ((emit-exp (- si wordsize) env #f) b)
-        (emit-remove-fxtag 'eax)
-        (emit "  imull ~s(%esp), %eax" si) ; multiply two number
-        (emit-add-fxtag 'eax))
       (define (emit-biv)
         (emit-exps-leave-last si env (list a b)))
-      #|((emit-exp si env #f) a)
-      (emit "   movl %eax, ~s(%esp)" si); store a to stack
-      ((emit-exp (- si wordsize) env #f) b))|#
+      (define (emit-*)
+        (emit-biv)
+        (emit "   movl ~s(%esp), %ecx # get a" si)
+        (emit-remove-fxtag 'ecx)
+        (emit-remove-fxtag 'eax)
+        (emit "   imull %ecx, %eax # a * b")
+        (emit-add-fxtag 'eax))
     (define (emit-cmp op)
       (emit-biv)
-      ;(printf "emit-cmp:~s\n" op)
-      (emit "  cmpl ~s(%esp), %eax" si)
+      (emit "   cmpl ~s(%esp), %eax" si)
       (case op
         ['= (emit "   sete %al")]
         ['< (emit "   setg %al")]
         ['<= (emit "  setge %al")]
         ['> (emit "   setl %al")]
         ['>= (emit "  setle %al")]
+        ['char= (emit "   sete %al")]
         [else (report-not-found)])
-      ;(printf "end of emit-cmp\n")
       (emit-eax-0/1->bool))
     (define op->emitter
       (biop-emit-pairs
@@ -250,7 +321,15 @@
         [fx> (emit-exp1 `(> ,a ,b))]
         [>= (emit-cmp '>=)]
         [fx>= (emit-exp1 `(>= ,a ,b))]
+        [char= (emit-cmp 'char=)]
         [cons (emit-cons a b)]
+        [eq?
+          ; simple treatment
+          (emit-exp1 `(= ,a ,b))]
+        [set-car!
+          (emit-set-car! a b)]
+        [set-cdr!
+          (emit-set-cdr! a b)]
         ))
     (define (report-not-found)
       (error 'emit-biop "~a is not a binary operator" op))
@@ -269,19 +348,12 @@
         (error 'emit-rands "some error happened"))
       (emit-swap-rands-range si new-si)
       new-si))
-  (define (emit-call-proc rator rands)
-    (let ([new-si (emit-rands rands)])
-      ;(printf "~a ~a\n" si new-si)
-      ; it's (+ wordsize new-si)!!!
-      (emit "   addl $~s, %esp" (+ wordsize new-si))
-      (emit "   call ~a" rator)
-      (emit "   subl $~s, %esp" (+ wordsize new-si))))
   (define (emit-make-vec n)
     ((emit-exp si env #f) n)
-    (emit "   movl %eax, ~s(%esp) #store length to stack" si)
+    (emit "   movl %eax, ~s(%esp) #store vec length to stack" si)
     (emit-remove-fxtag 'eax) ; %eax store length
     (emit-calc-vector-size)
-    (emit-alloc-heap (- si wordsize) #f) ; vec length on stack
+    (emit-alloc-heap (- si wordsize) #t) ; vec length on stack
     (emit-stack->heap si 0)
     (emit-add-vectag 'eax))
   (define (emit-vec-ref v i)
@@ -324,6 +396,55 @@
       )
     (emit "# emit-vec-from-values end")
     )
+  (define (emit-make-string n)
+    ((emit-exp si env #f) n)
+    (emit "   movl %eax, ~s(%esp) # store str len" si)
+    (emit-remove-fxtag 'eax)
+    (emit-calc-string-size)
+    (emit-alloc-heap (- si wordsize) #t)
+    (emit-stack->heap si 0) ; move length to heap
+    (emit-add-strtag 'eax))
+  (define (emit-string-ref s i)
+    (emit-exps-leave-last si env (list s i))
+    (emit-remove-fxtag 'eax)
+    (emit "   movl ~s(%esp), %ecx # str pointer" si)
+    (emit-remove-strtag 'ecx)
+    (emit "   movl $0, %edx # reset edx")
+    (emit "   movb ~s(%ecx, %eax), %dl # ith value in str" wordsize)
+    (emit "   movl %edx, %eax")
+    (emit-add-chartag 'eax)
+    )
+  (define (emit-string-set s i c)
+    (emit-exps-leave-last si env (list s i c))
+    (emit "   movl ~s(%esp), %ecx # get string pointer" si) ; s
+    (emit "   movl ~s(%esp), %edx # get idx:i" (- si wordsize)) ; i
+    (emit-remove-chartag 'eax)
+    (emit-remove-strtag 'ecx)
+    (emit-remove-fxtag 'edx)
+    (emit "   movb %al, ~a(%ecx, %edx) # string-set!" wordsize)
+    )
+  (define (emit-string-from-values cs)
+    (let* ([len (length cs)]
+           [new-si (emit-exps-push-all si env cs)])
+      ;(printf "~a ~a ~a\n" len si new-si)
+      (emit-alloc-heap new-si
+                       (+ wordsize len))
+      (emit "   movl $~s, (%eax) # move len to str"
+            (immediate-rep len))
+
+      (for ([i (in-range 0 len)])
+        (emit-stack->heap-by-char (- si (* i wordsize))
+                                  (+ wordsize i)))
+      (emit-add-strtag 'eax)))
+  (define (emit-make-symbol s)
+    ; make symbol from str
+    s
+    )
+  (define (emit-void)
+    (emit "   movl $~s, %eax" void-v))
+  (define (emit-constant-ref v)
+    (emit-load-global-to-eax v)
+    (emit "   movl (%eax), %eax # constant-ref"))
   (define (emit-cons a d)
     (let ([new-si (emit-exps-push-all si env (list a d))])
       (emit-alloc-heap new-si
@@ -331,6 +452,16 @@
       (emit-stack->heap si 0) ; move a to heap
       (emit-stack->heap (- si wordsize) wordsize) ; move d to heap
       (emit-add-pairtag 'eax)))
+  (define (emit-set-car! pair v)
+    (emit-exps-leave-last si env (list pair v))
+    (emit "   movl ~s(%esp), %ecx # get pair ptr" si)
+    (emit-remove-pairtag 'ecx)
+    (emit "   movl %eax, (%ecx) # set car"))
+  (define (emit-set-cdr! pair v)
+    (emit-exps-leave-last si env (list pair v))
+    (emit "   movl ~s(%esp), %ecx # get pair ptr" si)
+    (emit-remove-pairtag 'ecx)
+    (emit "   movl %eax, ~a(%ecx) # set cdr" wordsize))
   (define (emit-closure f rv)
     (emit "# emit-closure")
     ((emit-exp si env #f) rv)
@@ -385,12 +516,28 @@
       [(list si env)
        ((emit-exp si env tail?)
         body)]))
+  (define (emit-char-seq s reg start)
+    ; chars to heap, reg as pointer to heap,
+    ; start is the si of heap pointer
+    (for ([c (in-string s)]
+          [i (in-naturals start)])
+      (emit "   movb $~a, ~a(%eax)"
+            (char->integer c)
+            i)
+      ))
+  (define (emit-string s)
+    (emit-alloc-heap si (+ wordsize (string-length s)))
+    (emit "   movl $~a, (%eax) # str len" (immediate-rep (string-length s)))
+    (emit-char-seq s 'eax wordsize)
+    (emit-add-strtag 'eax))
   ; ## emit-exp1 ##
   (define emit-exp1
     (lambda (exp)
       (match exp
         [(? immediate? x)
          (emit "   movl $~s, %eax # emit immediate:~a" (immediate-rep x) x)]
+        [(? string? s)
+         (emit-string s)]
         [(? symbol? v)
          ; variable
          (let ([pos (env:app env v)])
@@ -404,6 +551,20 @@
           (emit-vec-set! v i val)]
         [`(vec ,v* ...)
           (emit-vec-from-values v*)]
+        [`(make-string ,n)
+          (emit-make-string n)]
+        [`(string-ref ,s ,i)
+          (emit-string-ref s i)]
+        [`(string-set! ,s ,i ,c)
+          (emit-string-set s i c)]
+        [`(string ,c* ...)
+          (emit-string-from-values c*)]
+        [`(make-symbol ,s)
+          (emit-make-symbol s)]
+        [`(constant-ref ,v)
+          (emit-constant-ref v)]
+        [`(void ,v* ...)
+          (emit-void)]
         [(list (? unop? op) v)
          (emit-unop op v)]
         [(list (? biop? op) a b)
@@ -431,6 +592,7 @@
               [(null? exps)
                (error 'begin "empty body")]
               [(null? (cdr exps))
+               (printf "~a\n" (car exps))
                (emit-exp1 (car exps))]
               [else
                 ((emit-exp si env #f) (car exps))
@@ -442,8 +604,6 @@
             f*
             proc*)
           (emit-exp1 exp)]
-        [`(app-proc ,rator ,rand* ...)
-          (emit-call-proc rator rand*)]
         [`(closure ,f ,rv)
           (emit-closure f rv)]
         [`(app ,rator ,rand* ...)
@@ -508,7 +668,17 @@
 (define (emit-add-pairtag reg)
   (emit "   orl $~s, %~a # add pairtag" pairtag reg))
 (define (emit-remove-pairtag reg)
-  (emit "   subl $~s, %~a" pairtag reg))
+  (emit "   subl $~s, %~a # remove pairtag" pairtag reg))
+(define (emit-add-strtag reg)
+  (emit "   orl $~s, %~a # add strtag" strtag reg))
+(define (emit-remove-strtag reg)
+  (emit "   subl $~s, %~a # remove strtag" strtag reg))
+(define (emit-add-chartag reg)
+  (emit "   shl $~s, %~a # add chartag" charshift reg)
+  (emit "   orl $~s, %~a" chartag reg)
+  )
+(define (emit-remove-chartag reg)
+  (emit "   shr $~s, %~a # remove chartag" charshift reg))
 
 (define gen-label
   (let ([count 0])
@@ -528,6 +698,12 @@
 (define (emit-eax->stack si)
   (emit "   movl %eax, ~s(%esp) # save eax value to stack" si)
   (- si wordsize))
+
+; move ah to stack; return next si
+; this is used for move characters
+(define (emit-al->stack si)
+  (emit "   movb %al, ~s(%esp) # save ah to stack" si)
+  (- si 1))
 
 ; return si
 (define (emit-exps-leave-last si env exps)
@@ -560,6 +736,19 @@
     new-si)
   )
 
+(define (emit-exps-push-all-by-char si env exps [tail? #f])
+  (emit "# emit-exps-push-all-by-char")
+  (let ([new-si
+          (foldl
+            (match-lambda*
+              [(list exp si)
+               ((emit-exp si env tail?) exp)
+               (emit-remove-chartag 'eax)
+               (emit-al->stack si)])
+            si
+            exps)])
+    (emit "# emit-exps-push-all-by-char end")
+    (align new-si wordsize)))
 ; swap i(%base) j(%base)
 (define (emit-swap i j [base 'esp])
   (emit "   movl ~s(%~s), %ecx" i base)
@@ -600,6 +789,11 @@
   (emit "   movl ~s(%esp), %ecx # move stack value to heap" stack-pos)
   (emit "   movl %ecx, ~s(%eax)" heap-pos))
 
+(define (emit-stack->heap-by-char stack-pos heap-pos)
+  (emit "   movl ~s(%esp), %ecx # move stack char value to ecx" stack-pos)
+  (emit-remove-chartag 'ecx)
+  (emit "   movb %cl, ~s(%eax) # move char to heap" heap-pos))
+
 ; move [start ... end] to [to_start ...]
 (define (emit-stack-move-range start step end to_start)
   (emit "# emit-stack-move-range ~a ~a ~a ~a"
@@ -637,6 +831,10 @@
   (emit "   addl $1, %eax # calculate vector size with %eax store length")
   (emit "   imull $~s, %eax" wordsize))
 
+(define (emit-calc-string-size)
+  ; length in %eax
+  (emit "   addl $~a, %eax # calc str byte size" wordsize))
+
 (define (emit-foreign-call si funcname)
   (emit "   addl $~s, %esp" (+ si wordsize))
   (emit "   call ~a" funcname)
@@ -650,7 +848,9 @@
   (emit "   movl %ecx, ~s(%esp)" (- si wordsize))
   (emit "   movl %ebp, ~s(%esp) # mem to stack" (- si (* 2 wordsize)))
   (emit-foreign-call (- si (* 3 wordsize))
-                     'heap_alloc))
+                     'heap_alloc)
+  ;(emit "   movl ~s(%esp), %ebp # recover mem ptr" (- si (* 2 wordsize)))
+  )
 
 (define emit-alloc-heap
   (match-lambda*
@@ -661,21 +861,26 @@
        (emit "   andl $~s, %eax" (- heap-align)))
      (emit-alloc-heap1 si)]
     [(list si (? number? size))
-     ; size is the bytes to allocate
-     (let ([aligned-size (bitwise-and (+ size (sub1 heap-align))
-                                      (- heap-align))])
-       (emit "   movl $~s, %eax" aligned-size)
+     ; size is the num of bytes to allocate
+     (let ([aligned-size (align-heap-size size)])
+       (emit "   movl $~s, %eax # aligned size to eax" aligned-size)
        (emit-alloc-heap1 si))]))
 
-(load "tests-1.3-req1.scm")
+#|(load "tests-1.3-req1.scm")
 (load "tests-1.4-req.scm")
 (load "tests-1.6-req.scm")
 (load "tests-1.6-opt.scm")
 (load "tests-1.5-req.scm")
-(load "tests-1.5-opt.scm")
+(load "tests-1.5-opt.scm")|#
 
-(load "tests-1.8-opt.scm") ; test pair
-; (load "tests-sexp.scm")
+;(load "tests-1.8-opt.scm") ; test pair
 ;(load "tests-print.scm")
 ;(load "tests-proc.scm")
-;(load "tests-vector.scm")
+;(load "tests-constant.scm")
+;(load "tests-1.8-req.scm")
+;(load "tests-1.9-req.scm") ; test begin, vector, string, set-car!/set-cdr!
+;(load "tests-2.1-req.scm") ; closure test
+;(load "tests-2.2-req.scm") ; test set!
+;(load "tests-2.3-req.scm") ; test constants
+(load "tests-2.4-req.scm")
+;(load "seck-tests.scm")

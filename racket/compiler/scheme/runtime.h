@@ -2,8 +2,9 @@
 #define fxshift 2
 #define fxmask 0x03
 #define bool_f 0x2F
-#define bool_t 0x6F
-#define null_v 0x3F
+#define bool_t 0x3F
+#define null_v 0x4F
+#define void_v 0x6F
 #define wordsize 4
 #define fx_tag 0x00
 #define objshift 3
@@ -49,8 +50,8 @@ typedef struct {
 } context;
 
 typedef struct {
-  char* heap;
-  char* global;
+  char* heap; // heap pointer
+  char* global; // global pointer
   char* heap_base;
   char* heap_top;
   char* heap_base1;
@@ -97,6 +98,7 @@ int is_vector(ptr p);
 void print_ptr_rec(ptr x) ;
 int vector_length(int* v);
 int* to_vector(ptr p) ;
+char* to_string(ptr p);
 pair* to_pair(ptr p);
 closure* to_closure(ptr p);
 int is_closure(ptr x) ;
@@ -107,6 +109,7 @@ int vector_ref(int* v, int i);
 int vector_rep_ref(ptr vp, int i);
 void vector_set(int* vec, int i, int val);
 void vector_rep_set(ptr vrep, int i, int val);
+unsigned int string_length(char* s);
 void set_car(pair* pair_ptr, int val);
 void set_cdr(pair* pair_ptr, int val);
 void set_car_from_rep(ptr pair_rep, int val);

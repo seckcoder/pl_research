@@ -47,7 +47,6 @@
 
   
 
-#!eof
 (add-tests-with-string-output "procedures"
   [(letrec () 12) => "12\n"]
   [(letrec () (let ([x 5]) (fx+ x x))) => "10\n"]

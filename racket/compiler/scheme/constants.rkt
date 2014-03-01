@@ -1,19 +1,46 @@
 #lang racket
 
 (require "global.rkt"
-         "base.rkt")
+         "base.rkt"
+         "../../base/utils.rkt")
 
 (provide (rename-out [lift lift-constant]))
+
+(define (transform-constant v)
+  (match v
+    [(? immediate?) v]
+    [(? string?) v]
+    [(vector v* ...)
+     `(vec ,@v*)]
+    [`(quote ,v)
+      (error 'quote "quote in quote not handled")]
+    [(? symbol?)
+     ; symbol
+     (error 'symbol " not implemented")]
+    [(? pair?)
+     ; complex constant
+     (let ([n (gensym 'c)])
+        (add-global! n `(datum ,(list->pair v)))
+        `(constant-ref ,n))]
+    [_ (error 'transform-constant "~a is not matched" v)]
+    ))
+
+;(provide list->pair)
+(define (list->pair l)
+  (cond
+    [(null? l) '()]
+    [(atom? l) l]
+    [(pair? l)
+      `(cons ,(list->pair (car l))
+             ,(list->pair (cdr l)))]))
 
 (define (lift e)
   (match e
     [(? immediate?) e]
+    [(? string?) e]
     [(? symbol?) e]
     [`(quote ,v)
-      (let ([n (gensym 'c)])
-        (add-global! n v)
-        `(constant-ref
-           ,n))]
+      (transform-constant v)]
     [(list (? prim-op? op) v* ...)
      `(,op ,@(map lift v*))]
     [`(if ,test ,then ,else)
