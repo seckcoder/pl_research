@@ -25,8 +25,13 @@
                        (match e
                          [(? immediate?)
                           e]
+                         [(? string?)
+                          e]
                          [(? symbol?)
                           e]
+                         [`(constant-ref ,v)
+                           ; for constant-ref, return it directly
+                           e]
                          [(list (? prim-op? op) v* ...)
                           `(,op ,@(map cvt-up v*))]
                          [`(if ,test ,then ,else)
@@ -67,8 +72,13 @@
     (match e
       [(? immediate?)
        (seteq)]
+      [(? string?)
+       (seteq)]
       [(? symbol? v)
        (seteq v)]
+      [`(constant-ref ,v)
+        ; v is not free variable, it's global variable
+        (seteq)]
       [(list (? prim-op? op) v* ...)
        (free-U v*)]
       [`(if ,test ,then ,else)
@@ -97,27 +107,28 @@
         (set-union u (free e)))
       (seteq)
       es)))
+
+(define (list-subtract l1 l2)
+  (set->list
+    (set-subtract
+      (list->seteq l1)
+      (list->seteq l2))))
+
+; for v in e, if v is in fvs, then, subst
 (define subst
   (lambda (e env fvs)
-    (define (subst-clj-env clj-env)
-      (let loop ([fvs (hash-keys clj-env)]
-                 [clj-env clj-env])
-        (cond
-          [(null? fvs) clj-env]
-          [else
-            (loop (cdr fvs)
-                  (hash-set clj-env
-                            (car fvs)
-                            ; subst env value
-                            (subst1 (car fvs))))])))
     (define (subst1 e)
       (match e
         [(? immediate?) e]
+        [(? string?) e]
         [(? symbol? v)
          (let ([idx (index-of fvs v)])
            (if (>= idx 0)
              `(vec-ref ,env ,idx)
              v))]
+        [`(constant-ref ,v)
+          ; don't replace constant-ref
+          e]
         [(list (? prim-op? op) v* ...)
          `(,op ,@(map subst1 v*))]
         [`(if ,test ,then ,else)
@@ -126,15 +137,13 @@
              ,(subst1 else))]
         [`(let ((,v* ,e*) ...) ,body)
           `(let ,(map list v* (map subst1 e*))
-             ,(subst body env (set-subtract fvs
-                                            (list->seteq v*))))]
+             ,(subst body env (list-subtract fvs v*)))]
         [`(begin ,exp* ...)
           `(begin
-             ,@(map subst exp*))]
+             ,@(map subst1 exp*))]
         [`(lambda (,v* ...) ,body)
           `(lambda ,v*
-             ,(subst body env (set-subtract fvs
-                                            (list->seteq v*))))]
+             ,(subst body env (list-subtract fvs v*)))]
         [`(closure ,f ,rv)
           `(closure ,f
                     ,(subst1 rv))]

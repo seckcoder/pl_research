@@ -1,5 +1,9 @@
+#lang racket
+
+; a ranged implementation of binary search
+; return [first, high) 
 (define (bin-search vec v cmp)
-  (letrec ((bin-search1 (lambda (i j)
+  (letrec [(bin-search1 (lambda (i j)
                           (cond ((and (= i j)
                                       (eq? (cmp (vector-ref vec i) v)
                                          '=))
@@ -23,11 +27,11 @@
                                       [(<) (bin-search2 (add1 mid) j)]
                                       [(>) (bin-search2 i (sub1 mid))]
                                       [(=) (bin-search2 (add1 mid) j)]
-                                      )))))))
+                                      ))))))]
     (list (bin-search1 0 (sub1 (vector-length vec)))
           (bin-search2 0 (sub1 (vector-length vec))))))
 
-(bin-search (vector 1 2 2 3 4) 2 (lambda (v1 v2)
+(bin-search (vector 1 2 2 2 3 4) 2 (lambda (v1 v2)
                                  (cond
                                    ((> v1 v2) '>)
                                    ((< v1 v2) '<)

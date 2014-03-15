@@ -76,6 +76,8 @@
   [(boolean? (lambda (x) x)) => "#f\n"]
   [(null? (lambda (x) x)) => "#f\n"]
   [(not (lambda (x) x)) => "#f\n"]
+  [(procedure? ((lambda ()
+                  (lambda () 1)))) => "#t\n"]
 )
 
 
