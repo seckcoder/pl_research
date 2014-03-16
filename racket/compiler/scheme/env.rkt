@@ -14,8 +14,14 @@
     vs
     vals))
 
+(define (ext-env env1 env2)
+  (exts
+    env1
+    (hash-keys env2)
+    (hash-values env2)))
+
 (define (env? v)
-  (hash-eq? v))
+  (and (hash? v) (hash-eq? v)))
 
 (define (app env v)
   (hash-ref env v (lambda ()

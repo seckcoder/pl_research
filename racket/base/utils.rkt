@@ -45,6 +45,7 @@
          range-len
          range-of-i
          range-param-check
+         tagged-list?
          )
 
 (define anything?
@@ -328,6 +329,11 @@
     [(list start step end)
      (lambda (i)
        (+ start (* i step)))]))
+
+(define (tagged-list? l sym)
+  (and (list? l)
+       (not (null? l))
+       (eq? (car l) sym)))
 
 (module+ test
   ; test without check
