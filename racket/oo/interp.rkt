@@ -82,11 +82,24 @@
     (if-exp
       (test then else)
       (if (interp-exp test env)
-        (interp-exp exp then env)
-        (interp-exp exp else env)))
+        (interp-exp then env)
+        (interp-exp else env)))
     (lambda-exp
       (params body)
       (closure params body env))
+    (letrec-exp
+      (vars vals body)
+      (let* ([refs (newrefs vars)]
+             [env (env:exts env vars refs)]
+             [vals (map (lambda (val)
+                          (interp-exp val env))
+                        vals)])
+        (for-each
+          (lambda (ref val)
+            (setref! ref val))
+          refs
+          vals)
+        (interp-exp body env)))
     (compound-exp
       (exps)
       (interp-exps-return-last exps env))
@@ -122,7 +135,7 @@
              [obj (new-object cls)])
         (apply-proc
           (find-method-from-class cls 'initialize)
-          (cons obj rands))
+          (cons obj (interp-exps-return-list rands env)))
         obj))
     (call-exp
       (rator rands)
@@ -292,6 +305,19 @@
                    exp)))
   (define (test-interp class-decls exp val msg)
     (check-equal? (demo-interp class-decls exp) val msg))
+  #|(test-interp
+    '()
+    '(letrec ([even? (lambda (n)
+                      (if (= n 0)
+                        #t
+                        (odd? (- n 1))))]
+              (odd? (lambda (n)
+                      (if (= n 0)
+                        #f
+                        (even? (- n 1))))))
+       (even? 10))
+    #t
+    "letrec test")
   (test-interp
     (list
       '(class c extends object
@@ -349,5 +375,89 @@
                         (send o3 m4)))
                (list 'c3:m2 'c1:m2)
                "static dispatch for super"
+               )|#
+
+  #|(demo-interp (list
+                 '(class c1 extends object
+                    (field v)
+                    (method
+                      initialize (o)
+                      (set! v o))
+                    (method
+                      get-v ()
+                      v)
+                    ))
+               '(let ([o (new c1 3)])
+                  (send o get-v)))|#
+
+  (test-interp (list
+                 '(class Role extends object
+                    (field blood)
+                    (field name)
+                    (field attack-value)
+                    (method
+                      initialize (bld n atkv)
+                      (set! blood bld)
+                      (set! name n)
+                      (set! attack-value atkv)
+                      )
+                    (method
+                      sub-blood! (val)
+                      (set! blood (- blood val)))
+                    (method
+                      attack! (role)
+                      (let ([role-a self]
+                            [role-b role])
+                        (send role-b
+                              sub-blood!
+                              (send role-a get-attack-value))))
+                    (method
+                      alive? ()
+                      (if (<= blood 0)
+                        #f
+                        #t))
+                    (method
+                      get-name ()
+                      name)
+                    (method
+                      get-attack-value ()
+                      attack-value)
+                    )
+                 '(class Wizard extends Role
+                    (field recover-value)
+                    (method
+                      initialize (bld n atkv recv)
+                      (super initialize bld n atkv)
+                      (set! recover-value recv))
+                    (method
+                      attack! (role)
+                      (super attack! role)
+                      (set! blood (+ recover-value blood))))
+                 '(class Knight extends Role
+                    (method get-attack-value ()
+                            (* 2 attack-value))))
+               '(letrec ([fight (lambda (role-a role-b)
+                                  (let ([a-alive? (send role-a alive?)]
+                                        [b-alive? (send role-b alive?)])
+                                    (let ([check-state (lambda ()
+                                                         (cond
+                                                           [(and (not a-alive?) (not b-alive?))
+                                                            (list 'finished 'tie)]
+                                                           [(and a-alive? (not b-alive?))
+                                                            (list 'finished (send role-a get-name))]
+                                                           [(and (not a-alive?) b-alive?)
+                                                            (list 'finished (send role-b get-name))]
+                                                           [else
+                                                             (list 'unfinished)]))])
+                                      (let ([state (check-state)])
+                                        (if (eq? (car state) 'finished)
+                                          state
+                                          (begin
+                                            (send role-a attack! role-b)
+                                            (fight role-b role-a)))))))])
+                  (fight (new Wizard 10 'wizard 2 1)
+                         (new Knight 10 'knight 2)))
+               '(finished knight)
+               "a full demo for oop"
                )
   )

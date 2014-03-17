@@ -1,20 +1,24 @@
 #include <iostream>
 
+// polymorphism/virtual function in C++ provides
+// dynamic dispatch for self. Compare this to
+// self_dispatch.cc
+
 using namespace std;
 
 class c1 {
  public:
-  void m1() {
+  virtual void m1() {
     cout << "c1:m1" << endl;
   }
   void m2() {
-    this->m1(); // C++ use static dispatch for self!
+    this->m1(); // m1 is virtual.
   }
 };
 
 class c2:public c1 {
  public:
-  void m1() {
+  virtual void m1() {
     cout << "c2:m1" << endl;
   }
 };
