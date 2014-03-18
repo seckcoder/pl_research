@@ -405,13 +405,6 @@
                       sub-blood! (val)
                       (set! blood (- blood val)))
                     (method
-                      attack! (role)
-                      (let ([role-a self]
-                            [role-b role])
-                        (send role-b
-                              sub-blood!
-                              (send role-a get-attack-value))))
-                    (method
                       alive? ()
                       (if (<= blood 0)
                         #f
@@ -422,6 +415,13 @@
                     (method
                       get-attack-value ()
                       attack-value)
+                    (method
+                      attack! (role)
+                      (let ([role-a self]
+                            [role-b role])
+                        (send role-b
+                              sub-blood!
+                              (send role-a get-attack-value))))
                     )
                  '(class Wizard extends Role
                     (field recover-value)

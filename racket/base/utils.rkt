@@ -405,5 +405,7 @@
   (check-equal?
     ((range-of-i 8 3) 2) 6)
 
-  ;(check-equal? 
+  (check-equal?
+    (flatmap (lambda (v) (list v)) '(1 2 3 4))
+    '(1 2 3 4))
   )
