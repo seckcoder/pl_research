@@ -1,5 +1,7 @@
 #lang racket
 
+(provide (all-defined-out))
+
 ; scanner spec
 #|
 Scanner-spec ::= ({Regexp-and-action}!)
@@ -10,8 +12,11 @@ Regexp ::= String | letter | digit | whitespace | any
        ::=(arbno Regexp)|(concat {Regexp}!)
 Action ::= skip | symbol | number | string
 |#
-(define arithmetic-spec
+(define general-spec
   '((white-sp (whitespace) skip)
+    (left-bracket ("(") symbol)
+    (right-bracket (")") symbol)
     (comment (";" (arbno (not #\newline))) skip)
     (identifier (letter (arbno (or letter digit))) symbol)
-    (number (digit (arbno digit)) number)))
+    (number (digit (arbno digit)) number)
+    ))

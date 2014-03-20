@@ -14,7 +14,7 @@
 ;        :: = (arbno Regexp) | ({Regexp}!)
 ; Explanation:
 ;    String, Char means any unit representable in the text editor.
-;    letter: [a-zA-Z]
+;    letter: any character except empty space,
 ;    digit: 0-9
 ;    whitespace: space, tab, new-line, form-feed
 ;    any: any thing

@@ -17,35 +17,49 @@
         (list name (make-automaton (expand-reg reg) 'dfa) action)])
     specs))
 
+(struct Token (name str) #:transparent)
+
 (define (make-lexer specs)
-  (lambda (prog-str)
-    (let ([specs (make-automatons-from-specs specs)])
-    (let loop ([cur 0]
-               [tokens '()])
-      (if (>= cur (string-length prog-str))
-        (reverse tokens) ; token is consed
-        (letrec
-          ([match-specs (lambda (specs k)
-                          (cond
-                            [(null? specs)
-                             (error 'lexer "program is not matched at:~a" cur)]
-                            [else
-                              (match (car specs)
-                                [`(,name ,auto ,action)
-                                  (match-automaton
-                                    auto
-                                    prog-str
-                                    cur
-                                    (lambda (matched? new-cur str)
-                                      (if matched?
-                                        (k action new-cur (a-token name str))
-                                        (match-specs (cdr specs) k))))])]))])
-          (match-specs
-            specs
-            (lambda (action new-cur new-token)
-              (case action
-                [(skip)
-                 (loop new-cur tokens)]
-                [else
-                  (loop new-cur
-                        (cons new-token tokens))])))))))))
+  (let ([specs (make-automatons-from-specs specs)])
+    (lambda (prog-str)
+      (let loop ([next 0]
+                 [tokens '()])
+        (if (>= next (string-length prog-str))
+          (reverse tokens) ; token is consed
+          (letrec
+            ([match-specs (lambda (specs k)
+                            (cond
+                              [(null? specs)
+                               (error 'lexer "program is not matched at:~a" next)]
+                              [else
+                                (match (car specs)
+                                  [`(,name ,auto ,action)
+                                    (match-automaton
+                                      auto
+                                      prog-str
+                                      next
+                                      (lambda (res)
+                                        (printf "match automaton result:~a" res)(newline)
+                                        (match res
+                                          [(FullMatch matched-str)
+                                           ; full match, the match finished
+                                           (k action (string-length prog-str) (Token name matched-str))]
+                                          [(PartialMatch matched-str next)
+                                           (k action next (Token name matched-str))]
+                                          [(NotMatch next)
+                                           (match-specs (cdr specs) k)])))])]))])
+            (match-specs
+              specs
+              (lambda (action new-cur new-token)
+                (printf "~a ~a ~a\n" action new-token new-cur)
+                (case action
+                  [(skip)
+                   (loop new-cur tokens)]
+                  [else
+                    (loop new-cur
+                          (cons new-token tokens))])))))))))
+
+(module+ test
+  (require "lex-demos.rkt")
+  (let ([lexer (make-lexer general-spec)])
+    (lexer "b)")))
