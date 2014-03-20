@@ -3,11 +3,21 @@
 (require "../../base/utils.rkt")
 
 (provide make-nfa
-         merge-nfa)
+         merge-nfa
+         state?
+         trans-end
+         sigma-trans?
+         hash-add-trans!)
 
-; Regexp ::= String | letter | digit | whitespace | any
-;        ::= (not Character) | (or {Regexp}!)
+; Regexp ::= String | Char | letter | digit | whitespace | any
+;        ::= (not Char) | (or {Regexp}!)
 ;        :: = (arbno Regexp) | ({Regexp}!)
+; Explanation:
+;    String, Char means any unit representable in the text editor.
+;    letter: [a-zA-Z]
+;    digit: 0-9
+;    whitespace: space, tab, new-line, form-feed
+;    any: any thing
 
 
 ; NFA ::= (start end (i a j) ...)
@@ -18,6 +28,7 @@
 ; Character ::= String | char | letter | digit | whitespace | any 
 ; a ::= Character | (not Character)
 
+(define state? number?)
 (define gen-state
   (let ([n -1])
     (lambda ()
@@ -27,6 +38,11 @@
 (define nfa-start car)
 (define nfa-end cadr)
 (define nfa-trans caddr)
+(define trans-start car)
+(define trans-a cadr)
+(define trans-end caddr)
+(define (sigma-trans? trans)
+  (eq? (trans-a trans) 'sigma))
 (define (sigma-trans start end)
   `(,start sigma ,end))
 
@@ -63,7 +79,7 @@
       [(? character? c)
        `(,start ,end ((,start ,c ,end)))]
       [`(not ,(? character? c))
-        `(,start ,end ((,start ,c ,end)))]
+        `(,start ,end ((,start ,reg ,end)))]
       [`(or ,reg0 ,reg* ...)
         (let ([nfas
                 (map
@@ -99,24 +115,24 @@
       [_ (error 'nfa "the format of regular expression:~a is not right" reg)]
       )))
 
+(define (hash-add-trans! htb trans)
+  (match trans
+    [`(,start ,a ,end)
+      (if (not (hash-has-key? htb start))
+        (hash-set! htb start (list trans))
+        (hash-set!
+          htb
+          start
+          (cons
+            trans
+            (hash-ref htb start))))]))
 ; merge nfa's trans into a hashtable.
 ; arrange the keys from 0
 (define (merge-nfa nfa)
-  (let* ([htb (make-hasheq)]
-         [hash-add! (lambda (trans)
-                      ;(print trans)(newline)
-                      (match trans
-                        [`(,start ,a ,end)
-                          (if (not (hash-has-key? htb start))
-                            (hash-set! htb start (list trans))
-                            (hash-set!
-                              htb
-                              start
-                              (cons
-                                trans
-                                (hash-ref htb start))))]))])
+  (let* ([htb (make-hasheq)])
     (for-each
-      hash-add!
+      (lambda (trans)
+        (hash-add-trans! htb trans))
       (nfa-trans nfa))
     (match (re-hash (nfa-start nfa)
                     (nfa-end nfa)
