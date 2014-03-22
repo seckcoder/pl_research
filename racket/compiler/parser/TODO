@@ -1,0 +1,2 @@
+lexer: refer to racket's implementation of lexer
+parser: parser generator(SLR). parser combinator. yacc is dead.

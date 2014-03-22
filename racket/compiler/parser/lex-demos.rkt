@@ -14,8 +14,6 @@ Action ::= skip | symbol | number | string
 |#
 (define general-spec
   '((white-sp (whitespace) skip)
-    (left-bracket ("(") symbol)
-    (right-bracket (")") symbol)
     (comment (";" (arbno (not #\newline))) skip)
     (identifier (letter (arbno (or letter digit))) symbol)
     (number (digit (arbno digit)) number)

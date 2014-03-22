@@ -68,6 +68,7 @@
                      (concat-two-nfa (car nfas) (cadr nfas))
                      (cddr nfas)))]))
 
+; create nfa from regular expression
 (define (make-nfa reg)
   (let ([start (gen-state)]
         [end (gen-state)]
@@ -81,6 +82,7 @@
       [`(not ,(? character? c))
         `(,start ,end ((,start ,reg ,end)))]
       [`(or ,reg0 ,reg* ...)
+        ; or-comb several automaton
         (let ([nfas
                 (map
                   make-nfa
@@ -97,8 +99,10 @@
                   nfas)))]
       [`(concat ,reg0 ,reg* ...)
         (let ([nfas (map make-nfa (cons reg0 reg*))])
+          ; concat several automation
           (concat-nfas nfas))]
       [`(arbno ,reg)
+        ; arbno-comb a regular expression
         (let* ([unit-nfa (make-nfa reg)]
                [unit-start (nfa-start unit-nfa)]
                [unit-end (nfa-end unit-nfa)])
@@ -127,7 +131,7 @@
             trans
             (hash-ref htb start))))]))
 ; merge nfa's trans into a hashtable.
-; arrange the keys from 0
+; re-arrange the key's numbering from 0
 (define (merge-nfa nfa)
   (let* ([htb (make-hasheq)])
     (for-each
@@ -140,6 +144,8 @@
       [(list start end htb)
        (list start end htb)])))
 
+; create a new hashtable from htb, with start maping to zero, end mapping
+; to the max number, all key's numbering is restricted in [zero, max]
 (define (re-hash start end htb)
   (let* ([keys (hash-keys htb)]
          [values (flatmap
@@ -156,12 +162,22 @@
          [min-k (apply min values)]
          [max-k (apply max values)]
          [hash-fun (lambda (k)
+                     ; the hash function
                      (cond
-                       [(= k start) 0]
-                       [(= k end) (- max-k min-k)]
-                       [(= k min-k) (- start min-k)]
-                       [(= k max-k) (- end min-k)]
-                       [else (- k min-k)]))]
+                       [(= k start)
+                        ; start mapping to zero
+                        0]
+                       [(= k end)
+                        ; end mapping to the max number(total keys number -1)
+                        (- max-k min-k)]
+                       [(= k min-k)
+                        ; the smallest spot is taken by start, so we have to
+                        ; replace the origial number that takes the spot.
+                        (- start min-k)]
+                       [(= k max-k)
+                        (- end min-k)]
+                       [else
+                         (- k min-k)]))]
          [new-htb (make-hasheq)])
     ;(printf "~a ~a\n" min-k max-k)
     (for-each

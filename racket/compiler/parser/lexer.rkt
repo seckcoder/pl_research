@@ -19,6 +19,7 @@
 
 (struct Token (name str) #:transparent)
 
+; create lexer from specs
 (define (make-lexer specs)
   (let ([specs (make-automatons-from-specs specs)])
     (lambda (prog-str)
@@ -28,6 +29,9 @@
           (reverse tokens) ; token is consed
           (letrec
             ([match-specs (lambda (specs k)
+                            ; There is a problem with this implementation,
+                            ; we should match all specs with the longgest match
+                            ; selected instead of the first.
                             (cond
                               [(null? specs)
                                (error 'lexer "program is not matched at:~a" next)]
@@ -51,7 +55,7 @@
             (match-specs
               specs
               (lambda (action new-cur new-token)
-                (printf "~a ~a ~a\n" action new-token new-cur)
+                ;(printf "~a ~a ~a\n" action new-token new-cur)
                 (case action
                   [(skip)
                    (loop new-cur tokens)]
@@ -62,4 +66,4 @@
 (module+ test
   (require "lex-demos.rkt")
   (let ([lexer (make-lexer general-spec)])
-    (lexer "b)")))
+    (lexer "a + b")))

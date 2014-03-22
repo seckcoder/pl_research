@@ -20,8 +20,6 @@
       (error 'make-automaton "wrong type")]
     ))
 
+; currently only support dfa
 (define (match-automaton auto str idx cont)
-  ;(printf "match-automaton")(newline)
-  ;(printf "match-automaton ~a" k)(newline)
-  ;(+ 1 2)
   (match-dfa auto str idx cont))

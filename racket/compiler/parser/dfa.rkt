@@ -15,8 +15,9 @@
 ; the final state can't be accepted
 (struct NotMatch (next))
 
+; match a dfa to a str, start from the next pos
 (define (match-dfa the-dfa str next cont)
-  (printf "match-dfa:~a" cont)
+  ;(printf "match-dfa:~a" cont)
   (match the-dfa
     [`(,start ,ends ,dfa-trans)
       (letrec
@@ -43,10 +44,10 @@
             [else
               (letrec
                 ([match-trans (lambda (trans)
-                                (print "here")(newline)
+                                ;(print "here")(newline)
                                 (cond
                                   [(null? trans)
-                                   (print "null")(newline)
+                                   ;(print "null")(newline)
                                    ; no trans matched for current condition
                                    (cond
                                      [(is-end-state? cur-state)
@@ -58,7 +59,7 @@
                                         ; go on with the next one.
                                         (cont (PartialMatch (string-reverse-append matched-strs) next)))]
                                      [else
-                                       (printf "not match ~a" cont)(newline)
+                                       ;(printf "not match ~a" cont)(newline)
                                        ; we are not in end state, and we can't match
                                        (cont (NotMatch next))])]
                                   [else
@@ -71,8 +72,8 @@
                                              (loop new-state new-next (cons str matched-strs))])
                                           (match-trans (cdr trans)))))]))]
                  [match-a-transition (lambda (tran cont)
-                                       (printf "match ~a with ~a\n"
-                                               tran (string-ref str next))
+                                       #|(printf "match ~a with ~a\n"
+                                               tran (string-ref str next))|#
                                        (match tran
                                          [`(,start ,a ,end)
                                            (match a
@@ -172,16 +173,20 @@
                  )
                 (match-trans
                   (hash-ref dfa-trans cur-state '())))])))]))
+
+; make dfa from regular expression
 (define (make-dfa reg)
   (define gen-state
     (let ([n -1])
       (lambda ()
         (set! n (add1 n))
         n)))
+  ; create nfa
   (match (merge-nfa (make-nfa reg))
     [(list nfa-start nfa-end nfa-trans)
      (letrec
        ([sigma-closure
+          ; get sigma closure of a state. use dynamic programming
           (let ([mem (make-hasheq)])
             ; Dynamic Programming
             (lambda (s)
@@ -224,21 +229,26 @@
                                     (set! dfa-end-tags
                                       (cons state dfa-end-tags)))]
                 [add-state! (lambda (state)
-                              ;(printf "add state:~a\n" state)
+                              ; we map each dfa state to a number/tag
                               ; The smallest state number should be the
                               ; start state.
                               (let ([state-tag (gen-state)])
+                                ; if nfa end state is in the dfa state,
+                                ; then the dfa state is an end state
                                 (when (set-member? state nfa-end)
                                   (add-dfa-end-tags state-tag))
                                 (hash-ref! dfa-states state state-tag)
                                 state-tag))]
-                [dfa-start-tag (add-state! dfa-start)]
+                [dfa-start-tag
+                  ; this should be evaluated before other add-state! expression,
+                  ; since we want to give the start state smallest tag
+                  (add-state! dfa-start)]
                 [get-state-tag (lambda (state)
                                  ;(print state)(newline)
                                  (hash-ref dfa-states state (lambda ()
                                                               (error 'get-state-tag "state not found"))))]
                 [add-dfa-trans! (lambda (start a end)
-                                  ; we didn't remove duplicates here
+                                  ; we didn't remove duplicates here.
                                   (set! dfa-trans
                                     (cons (list (get-state-tag start)
                                                 a
@@ -260,16 +270,20 @@
                                 [`(,a-nfa-start ,a ,a-nfa-end)
                                   ; non sigma trans.
                                   (let ([end-state (sigma-closure a-nfa-end)])
+                                    ; add the state if it's a new state
                                     (when (is-new-state? end-state)
                                       (add-state! end-state)
                                       (dfs! end-state))
                                     ; Note we should add trans whether this
-                                    ; is a new state or not
+                                    ; is a new state or not. Since for a start
+                                    ; state, it's possible to have multi transition
+                                    ; for two different input.(DFA: single transition for per input per state)
                                     (add-dfa-trans! start-state a end-state))]
                                 [_ (error 'dfa-dfs "not a nfa trans")])
                               (get-nfa-trans nfa-state)))
                           (set->list start-state)))]
                 [merge-dfa-trans (lambda ()
+                                   ; remove duplicates, create a hash table for the transitions
                                    (let ([dfa-trans (remove-duplicates dfa-trans equal?)]
                                          [trans-tbl (make-hasheq)])
                                      (for-each
@@ -286,6 +300,6 @@
            (merge-dfa-trans))))]))
 
 (module+ test
-  (let ([dfa (make-dfa '(arbno (concat (or letter digit whitespace) (not #\c))))])
-    ((dfa 'match) "a b 1 -" 0 (lambda (match-res)
+  (let ([dfa (make-dfa '(arbno (or letter digit whitespace)))])
+    (match-dfa dfa "a b c" 0 (lambda (match-res)
                                 (print match-res)(newline)))))
